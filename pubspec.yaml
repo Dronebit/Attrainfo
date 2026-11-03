@@ -1,5 +1,5 @@
-name: my_app
-description: Flutter app built in CI
+name: attracontrol
+description: Учёт отказов и простоев аттракционов
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,6 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  provider: ^6.1.2
+  intl: ^0.19.0
+  fl_chart: ^0.68.0
+  shared_preferences: ^2.3.0
 
 dev_dependencies:
   flutter_test:
