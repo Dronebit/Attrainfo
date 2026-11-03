@@ -3,8 +3,8 @@ import '../models/models.dart';
 
 Map<String, dynamic> buildSeed() {
   final now = DateTime.now();
-  final h = (int n) => now.subtract(Duration(hours: n));
-  final d = (int n) => now.subtract(Duration(days: n));
+  DateTime h(int n) => now.subtract(Duration(hours: n));
+  DateTime d(int n) => now.subtract(Duration(days: n));
 
   return {
     'cities': [
