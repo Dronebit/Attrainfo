@@ -7,6 +7,7 @@ import 'incidents_screen.dart';
 import 'downtime_screen.dart';
 import 'infrastructure_screen.dart';
 import 'technicians_screen.dart';
+import 'operator_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -23,19 +24,18 @@ class _HomeShellState extends State<HomeShell> {
     ('Простои', 'Документирование простоя и ввода в эксплуатацию', Icons.timer_outlined),
     ('Инфраструктура', 'Города · локации · парки · аттракционы', Icons.layers_outlined),
     ('Сервисная служба', 'Сотрудники и назначения', Icons.people_outline),
+    ('Оператор', 'Смена · аттракционы · сообщения о проблемах', Icons.support_agent),
   ];
 
   @override
   Widget build(BuildContext context) {
-  
-  
-    // Примечание: см. enum IncidentStatus — здесь упрощённо
-    const screens = <Widget> [
+    const screens = <Widget>[
       DashboardScreen(),
       IncidentsScreen(),
       DowntimeScreen(),
       InfrastructureScreen(),
       TechniciansScreen(),
+      OperatorScreen(),
     ];
 
     final isWide = MediaQuery.of(context).size.width >= 900;
@@ -49,7 +49,8 @@ class _HomeShellState extends State<HomeShell> {
                   onTap: (i) => setState(() => _index = i),
                   pages: _pages,
                 ),
-                Expanded(child: _MainArea(
+                Expanded(
+                    child: _MainArea(
                   title: _pages[_index].$1,
                   subtitle: _pages[_index].$2,
                   child: screens[_index],
@@ -61,7 +62,8 @@ class _HomeShellState extends State<HomeShell> {
                   onTap: (i) => setState(() => _index = i),
                   pages: _pages,
                 ),
-                Expanded(child: _MainArea(
+                Expanded(
+                    child: _MainArea(
                   title: _pages[_index].$1,
                   subtitle: _pages[_index].$2,
                   child: screens[_index],
@@ -72,14 +74,12 @@ class _HomeShellState extends State<HomeShell> {
   }
 }
 
-// Простая обёртка, чтобы не тянуть enum из models в этот файл
-class IncidentStatusLite { static const resolved = 'resolved'; }
-
 class _MainArea extends StatelessWidget {
   final String title;
   final String subtitle;
   final Widget child;
-  const _MainArea({required this.title, required this.subtitle, required this.child});
+  const _MainArea(
+      {required this.title, required this.subtitle, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -91,16 +91,27 @@ class _MainArea extends StatelessWidget {
           border: Border(bottom: BorderSide(color: AppColors.line)),
         ),
         child: Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-            Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.mut)),
-          ])),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 19, fontWeight: FontWeight.w700)),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.mut)),
+              ],
+            ),
+          ),
         ]),
       ),
-      Expanded(child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(28, 22, 28, 46),
-        child: child,
-      )),
+      Expanded(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(28, 22, 28, 46),
+          child: child,
+        ),
+      ),
     ]);
   }
 }
@@ -109,7 +120,8 @@ class _Sidebar extends StatelessWidget {
   final int index;
   final ValueChanged<int> onTap;
   final List<(String, String, IconData)> pages;
-  const _Sidebar({required this.index, required this.onTap, required this.pages});
+  const _Sidebar(
+      {required this.index, required this.onTap, required this.pages});
 
   @override
   Widget build(BuildContext context) {
@@ -117,7 +129,8 @@ class _Sidebar extends StatelessWidget {
       width: 252,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [Color(0xFF101823), Color(0xFF0B0F16)],
         ),
         border: Border(right: BorderSide(color: AppColors.line)),
@@ -126,20 +139,24 @@ class _Sidebar extends StatelessWidget {
       child: Column(children: [
         const _Logo(),
         const SizedBox(height: 14),
-        ...List.generate(pages.length, (i) => Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: _NavItem(
-            icon: pages[i].$3,
-            label: pages[i].$1,
-            active: i == index,
-            onTap: () => onTap(i),
+        ...List.generate(
+          pages.length,
+          (i) => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _NavItem(
+              icon: pages[i].$3,
+              label: pages[i].$1,
+              active: i == index,
+              onTap: () => onTap(i),
+            ),
           ),
-        )),
+        ),
         const Spacer(),
         TextButton.icon(
           onPressed: () => context.read<AppDatabase>().resetToSeed(),
           icon: const Icon(Icons.refresh, size: 14),
-          label: const Text('Сбросить демо-данные', style: TextStyle(fontSize: 12)),
+          label:
+              const Text('Сбросить демо-данные', style: TextStyle(fontSize: 12)),
         ),
       ]),
     );
@@ -150,7 +167,8 @@ class _TopNavBar extends StatelessWidget {
   final int index;
   final ValueChanged<int> onTap;
   final List<(String, String, IconData)> pages;
-  const _TopNavBar({required this.index, required this.onTap, required this.pages});
+  const _TopNavBar(
+      {required this.index, required this.onTap, required this.pages});
 
   @override
   Widget build(BuildContext context) {
@@ -164,15 +182,20 @@ class _TopNavBar extends StatelessWidget {
         Expanded(
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: Row(children: List.generate(pages.length, (i) => Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: _NavItem(
-                icon: pages[i].$3,
-                label: pages[i].$1,
-                active: i == index,
-                onTap: () => onTap(i),
+            child: Row(
+              children: List.generate(
+                pages.length,
+                (i) => Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: _NavItem(
+                    icon: pages[i].$3,
+                    label: pages[i].$1,
+                    active: i == index,
+                    onTap: () => onTap(i),
+                  ),
+                ),
               ),
-            ))),
+            ),
           ),
         ),
       ]),
@@ -185,7 +208,11 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool active;
   final VoidCallback onTap;
-  const _NavItem({required this.icon, required this.label, required this.active, required this.onTap});
+  const _NavItem(
+      {required this.icon,
+      required this.label,
+      required this.active,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -196,18 +223,24 @@ class _NavItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(11),
-          color: active ? AppColors.amb.withValues(alpha:0.12) : Colors.transparent,
+          color: active
+              ? AppColors.amb.withValues(alpha: 0.12)
+              : Colors.transparent,
           border: Border.all(
-            color: active ? AppColors.amb.withValues(alpha:0.22) : Colors.transparent,
+            color: active
+                ? AppColors.amb.withValues(alpha: 0.22)
+                : Colors.transparent,
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 18, color: active ? AppColors.amb2 : AppColors.mut),
+          Icon(icon,
+              size: 18, color: active ? AppColors.amb2 : AppColors.mut),
           const SizedBox(width: 11),
-          Text(label, style: TextStyle(
-            color: active ? AppColors.amb2 : AppColors.mut,
-            fontWeight: FontWeight.w500,
-          )),
+          Text(label,
+              style: TextStyle(
+                color: active ? AppColors.amb2 : AppColors.mut,
+                fontWeight: FontWeight.w500,
+              )),
         ]),
       ),
     );
@@ -220,19 +253,26 @@ class _Logo extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(children: [
       Container(
-        width: 42, height: 42,
+        width: 42,
+        height: 42,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color: AppColors.amb.withValues(alpha:0.12),
-          border: Border.all(color: AppColors.amb.withValues(alpha:0.25)),
+          color: AppColors.amb.withValues(alpha: 0.12),
+          border: Border.all(color: AppColors.amb.withValues(alpha: 0.25)),
         ),
-        child: const Icon(Icons.attractions, color: AppColors.amb, size: 24),
+        child:
+            const Icon(Icons.attractions, color: AppColors.amb, size: 24),
       ),
       const SizedBox(width: 11),
-      const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('АттраКонтроль', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)),
-        Text('учёт отказов и простоев', style: TextStyle(fontSize: 11, color: AppColors.dim)),
-      ]),
+      const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('АттраКонтроль',
+                style: TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 15.5)),
+            Text('учёт отказов и простоев',
+                style: TextStyle(fontSize: 11, color: AppColors.dim)),
+          ]),
     ]);
   }
 }
