@@ -1,0 +1,123 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/enums.dart';
+import '../models/models.dart';
+import 'seed.dart';
+
+class AppDatabase extends ChangeNotifier {
+  static const _key = 'attrakontrol-v1';
+
+  List<City> cities = [];
+  List<ParkLocation> locations = [];
+  List<Park> parks = [];
+  List<Ride> rides = [];
+  List<Technician> techs = [];
+  List<Downtime> downtimes = [];
+  List<Incident> incidents = [];
+
+  City? cityById(String? id) => cities.firstWhereOrNull((c) => c.id == id);
+  ParkLocation? locById(String? id) => locations.firstWhereOrNull((l) => l.id == id);
+  Park? parkById(String? id) => parks.firstWhereOrNull((p) => p.id == id);
+  Ride? rideById(String? id) => rides.firstWhereOrNull((r) => r.id == id);
+  Technician? techById(String? id) => techs.firstWhereOrNull((t) => t.id == id);
+
+  String cityOfPark(Park p) {
+    final l = locById(p.locId);
+    final c = l == null ? null : cityById(l.cityId);
+    return c?.name ?? '—';
+  }
+
+  String ridePath(String rideId) {
+    final r = rideById(rideId);
+    if (r == null) return '—';
+    final p = parkById(r.parkId);
+    final l = p == null ? null : locById(p.locId);
+    final c = l == null ? null : cityById(l.cityId);
+    return [c?.name, l?.name, p?.name].where((x) => x != null).join(' · ');
+  }
+
+  // ---- analytics ----
+  List<({String rideId, double total, Map<DowntimeReason, double> byReason})>
+      downtimeByRide(int periodDays) {
+    final now = DateTime.now();
+    final from = now.subtract(Duration(days: periodDays));
+    final map = <String, ({double total, Map<DowntimeReason, double> byReason})>{};
+    for (final d in downtimes) {
+      final s = d.start.isAfter(from) ? d.start : from;
+      final e = (d.end ?? now).isBefore(now) ? (d.end ?? now) : now;
+      if (!e.isAfter(s)) continue;
+      final hrs = e.difference(s).inMinutes / 60.0;
+      final cur = map[d.rideId] ?? (total: 0.0, byReason: <DowntimeReason, double>{});
+      final br = Map<DowntimeReason, double>.from(cur.byReason);
+      br[d.reason] = (br[d.reason] ?? 0) + hrs;
+      map[d.rideId] = (total: cur.total + hrs, byReason: br);
+    }
+    return map.entries
+        .map((e) => (rideId: e.key, total: e.value.total, byReason: e.value.byReason))
+        .toList()
+      ..sort((a, b) => b.total.compareTo(a.total));
+  }
+
+  // ---- mutations ----
+  Future<void> save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, jsonEncode({
+      'cities': cities.map((e) => e.toJson()).toList(),
+      'locations': locations.map((e) => e.toJson()).toList(),
+      'parks': parks.map((e) => e.toJson()).toList(),
+      'rides': rides.map((e) => e.toJson()).toList(),
+      'techs': techs.map((e) => e.toJson()).toList(),
+      'downtimes': downtimes.map((e) => e.toJson()).toList(),
+      'incidents': incidents.map((e) => e.toJson()).toList(),
+    }));
+    notifyListeners();
+  }
+
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    Map<String, dynamic>? json;
+    if (raw != null) {
+      try { json = jsonDecode(raw); } catch (_) {}
+    }
+    json ??= _seedJson();
+    _apply(json);
+    notifyListeners();
+  }
+
+  Future<void> resetToSeed() async {
+    _apply(_seedJson());
+    await save();
+  }
+
+  Map<String, dynamic> _seedJson() {
+    final s = buildSeed();
+    return {
+      'cities': (s['cities'] as List<City>).map((e) => e.toJson()).toList(),
+      'locations': (s['locations'] as List<ParkLocation>).map((e) => e.toJson()).toList(),
+      'parks': (s['parks'] as List<Park>).map((e) => e.toJson()).toList(),
+      'rides': (s['rides'] as List<Ride>).map((e) => e.toJson()).toList(),
+      'techs': (s['techs'] as List<Technician>).map((e) => e.toJson()).toList(),
+      'downtimes': (s['downtimes'] as List<Downtime>).map((e) => e.toJson()).toList(),
+      'incidents': (s['incidents'] as List<Incident>).map((e) => e.toJson()).toList(),
+    };
+  }
+
+  void _apply(Map<String, dynamic> j) {
+    cities = (j['cities'] as List).map((e) => City.fromJson(e)).toList();
+    locations = (j['locations'] as List).map((e) => ParkLocation.fromJson(e)).toList();
+    parks = (j['parks'] as List).map((e) => Park.fromJson(e)).toList();
+    rides = (j['rides'] as List).map((e) => Ride.fromJson(e)).toList();
+    techs = (j['techs'] as List).map((e) => Technician.fromJson(e)).toList();
+    downtimes = (j['downtimes'] as List).map((e) => Downtime.fromJson(e)).toList();
+    incidents = (j['incidents'] as List).map((e) => Incident.fromJson(e)).toList();
+  }
+}
+
+extension _FirstWhereOrNull<E> on List<E> {
+  E? firstWhereOrNull(bool Function(E) test) {
+    for (final e in this) { if (test(e)) return e; }
+    return null;
+  }
+}
