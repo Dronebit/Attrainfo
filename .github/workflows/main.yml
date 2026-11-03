@@ -33,48 +33,20 @@ jobs:
             flutter create . --project-name "$PROJECT_NAME" --platforms=android
           fi
 
-          # ── Переопределяем compileSdk 36 для ВСЕХ модулей, включая плагины ──
-          if [ -f "android/build.gradle" ]; then
-            if ! grep -q "compileSdkVersion 36" android/build.gradle; then
-              cat >> android/build.gradle <<'EOF'
-
-subprojects {
-    afterEvaluate { project ->
-        if (project.plugins.hasPlugin("com.android.application") || project.plugins.hasPlugin("com.android.library")) {
-            project.android {
-                compileSdkVersion 36
-            }
-        }
-    }
-}
-EOF
+          GRADLE_FILE="android/build.gradle"
+          if [ -f "$GRADLE_FILE" ]; then
+            if ! grep -q "compileSdkVersion 36" "$GRADLE_FILE"; then
+              printf '\n\nsubprojects {\n    afterEvaluate { project ->\n        if (project.plugins.hasPlugin("com.android.application") || project.plugins.hasPlugin("com.android.library")) {\n            project.android {\n                compileSdkVersion 36\n            }\n        }\n    }\n}\n' >> "$GRADLE_FILE"
             fi
-          elif [ -f "android/build.gradle.kts" ]; then
-            if ! grep -q "compileSdkVersion(36)" android/build.gradle.kts; then
-              cat >> android/build.gradle.kts <<'EOF'
-
-subprojects {
-    afterEvaluate {
-        if (plugins.hasPlugin("com.android.application") || plugins.hasPlugin("com.android.library")) {
-            extensions.configure<com.android.build.gradle.BaseExtension> {
-                compileSdkVersion(36)
-            }
-        }
-    }
-}
-EOF
-            fi
+            echo "--- build.gradle tail ---"
+            tail -15 "$GRADLE_FILE"
           fi
 
-          # ── NFC-разрешения в манифест ──
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q "android.permission.NFC" "$MANIFEST"; then
             sed -i 's|<application|<uses-permission android:name="android.permission.NFC"/>\n    <uses-feature android:name="android.hardware.nfc" android:required="false"/>\n    <application|' "$MANIFEST"
           fi
           sed -i 's|android:name="${applicationName}"||' "$MANIFEST"
-
-          echo "--- build.gradle tail ---"
-          tail -20 android/build.gradle 2>/dev/null || tail -20 android/build.gradle.kts
 
       - name: flutter pub get
         run: flutter pub get
@@ -93,4 +65,4 @@ EOF
         with:
           name: app-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error 
+          if-no-files-found: error
