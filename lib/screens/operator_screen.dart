@@ -52,7 +52,7 @@ class _WelcomeState extends State<_Welcome> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(OperatorScreen._opName,
+              const Text(OperatorScreen._opName,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 22, fontWeight: FontWeight.w700)),
