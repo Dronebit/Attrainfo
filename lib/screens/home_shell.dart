@@ -30,7 +30,7 @@ class _HomeShellState extends State<HomeShell> {
   
   
     // Примечание: см. enum IncidentStatus — здесь упрощённо
-    final screens = const [
+    const screens = <Widget> [
       DashboardScreen(),
       IncidentsScreen(),
       DowntimeScreen(),
