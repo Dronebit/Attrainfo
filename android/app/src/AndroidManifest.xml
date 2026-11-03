@@ -1,28 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Интернет: для HTTP-запросов к backend, если будешь подключать -->
     <uses-permission android:name="android.permission.INTERNET"/>
-
-    <!-- NFC: для чтения бейджей операторов -->
     <uses-permission android:name="android.permission.NFC"/>
     <uses-feature
         android:name="android.hardware.nfc"
         android:required="false"/>
-
-    <!-- Уведомления Android 13+ (для будущих push-уведомлений) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-
-    <!-- Foreground service (понадобится, если сделаешь сервер в приложении) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
-
-    <!-- Вибрация (для тактильной отдачи при скане NFC) -->
     <uses-permission android:name="android.permission.VIBRATE"/>
 
     <application
         android:label="АттраКонтроль"
-        android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
 
@@ -51,7 +41,6 @@
             android:value="2"/>
     </application>
 
-    <!-- Flutter требует этот блок для работы плагинов через queries (Android 11+) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
