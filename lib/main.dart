@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'data/app_database.dart';
+import 'screens/home_shell.dart';
+import 'theme.dart';
 
-void main() => runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final db = AppDatabase();
+  await db.load();
+  runApp(ChangeNotifierProvider.value(value: db, child: const AttraControlApp()));
+}
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+class AttraControlApp extends StatelessWidget {
+  const AttraControlApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: const Text('My App')),
-        body: const Center(child: Text('Hello, Flutter!')),
-      ),
+      title: 'АттраКонтроль',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.dark(),
+      home: const HomeShell(),
     );
   }
 }
