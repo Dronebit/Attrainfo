@@ -42,7 +42,6 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
       return true;
     }).toList()
       ..sort((a, b) {
-        // работающие — сверху, потом по имени
         if (a.status.canWork != b.status.canWork) {
           return a.status.canWork ? -1 : 1;
         }
@@ -60,10 +59,10 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
 
     final list = _filtered(db);
     final working = db.operators.where((o) => o.status.canWork).length;
-    final fired = db.operators.where((o) => o.status == OperatorStatus.fired).length;
+    final fired =
+        db.operators.where((o) => o.status == OperatorStatus.fired).length;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      // --- header ---
       Row(children: [
         Expanded(
           child: Text(
@@ -88,8 +87,6 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
         ),
       ]),
       const SizedBox(height: 14),
-
-      // --- filters ---
       Container(
         padding: const EdgeInsets.all(14),
         decoration: _cardDeco,
@@ -136,7 +133,6 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
         ]),
       ),
       const SizedBox(height: 12),
-
       if (list.isEmpty)
         Container(
           padding: const EdgeInsets.symmetric(vertical: 46),
@@ -161,7 +157,8 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
           padding: const EdgeInsets.all(24),
           decoration: _cardDeco,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.admin_panel_settings, size: 42, color: AppColors.amb),
+            const Icon(Icons.admin_panel_settings,
+                size: 42, color: AppColors.amb),
             const SizedBox(height: 14),
             const Text('Панель администратора',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
@@ -173,13 +170,10 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
             const Text('Доступные администраторы:',
                 style: TextStyle(fontSize: 11, color: AppColors.dim)),
             const SizedBox(height: 6),
-            ...db.admins
-                .where((a) => a.active)
-                .map((a) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(a.name,
-                          style: const TextStyle(fontSize: 12)),
-                    )),
+            ...db.admins.where((a) => a.active).map((a) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(a.name, style: const TextStyle(fontSize: 12)),
+                )),
             const SizedBox(height: 18),
             _primaryBtn(
               icon: Icons.key,
@@ -290,16 +284,14 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
                 if (o.phone.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(o.phone,
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.dim)),
+                      style:
+                          const TextStyle(fontSize: 11, color: AppColors.dim)),
                 ],
               ],
             ),
           ),
         ]),
         const SizedBox(height: 10),
-
-        // Бейдж
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
@@ -325,8 +317,8 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
             if (o.badgeId == null)
               TextButton(
                 onPressed: () => _bindBadge(db, o),
-                child: const Text('Привязать',
-                    style: TextStyle(fontSize: 12)),
+                child:
+                    const Text('Привязать', style: TextStyle(fontSize: 12)),
               )
             else
               TextButton(
@@ -337,8 +329,6 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
           ]),
         ),
         const SizedBox(height: 10),
-
-        // Действия
         Wrap(spacing: 6, runSpacing: 6, children: [
           _smallBtn(
             icon: Icons.edit_outlined,
@@ -551,6 +541,7 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
     _snack('PIN изменён');
   }
 
+  // Статус — кастомный выбор без deprecated RadioListTile
   Future<void> _changeStatus(AppDatabase db, Operator o) async {
     OperatorStatus sel = o.status;
     final noteCtrl = TextEditingController(text: o.statusNote ?? '');
@@ -562,28 +553,62 @@ class _OperatorsScreenState extends State<OperatorsScreen> {
           backgroundColor: AppColors.panel,
           title: Text('Статус · ${o.name}'),
           content: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              for (final s in OperatorStatus.values)
-                RadioListTile<OperatorStatus>(
-                  value: s,
-                  groupValue: sel,
-                  onChanged: (v) => setS(() => sel = v ?? sel),
-                  title: Text(s.label,
-                      style: const TextStyle(fontSize: 13)),
-                  activeColor: AppColors.amb,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              const SizedBox(height: 8),
-              if (sel != OperatorStatus.active)
-                TextField(
-                  controller: noteCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Заметка',
-                    hintText: 'например: отпуск до 15.11, причина',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final s in OperatorStatus.values)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: InkWell(
+                      onTap: () => setS(() => sel = s),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: sel == s
+                              ? AppColors.amb.withValues(alpha: 0.12)
+                              : Colors.transparent,
+                          border: Border.all(
+                            color: sel == s
+                                ? AppColors.amb.withValues(alpha: 0.4)
+                                : AppColors.line2,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(children: [
+                          Icon(
+                            sel == s
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            size: 18,
+                            color: sel == s ? AppColors.amb : AppColors.dim,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(s.label,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: sel == s
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                              )),
+                        ]),
+                      ),
+                    ),
                   ),
-                ),
-            ]),
+                if (sel != OperatorStatus.active) ...[
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Заметка',
+                      hintText: 'например: отпуск до 15.11, причина',
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
           actions: [
             TextButton(
