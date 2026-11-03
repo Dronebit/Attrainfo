@@ -196,9 +196,9 @@ class _NavItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(11),
-          color: active ? AppColors.amb.withOpacity(0.12) : Colors.transparent,
+          color: active ? AppColors.amb.withValues(alpha:0.12) : Colors.transparent,
           border: Border.all(
-            color: active ? AppColors.amb.withOpacity(0.22) : Colors.transparent,
+            color: active ? AppColors.amb.withValues(alpha:0.22) : Colors.transparent,
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -223,8 +223,8 @@ class _Logo extends StatelessWidget {
         width: 42, height: 42,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color: AppColors.amb.withOpacity(0.12),
-          border: Border.all(color: AppColors.amb.withOpacity(0.25)),
+          color: AppColors.amb.withValues(alpha:0.12),
+          border: Border.all(color: AppColors.amb.withValues(alpha:0.25)),
         ),
         child: const Icon(Icons.attractions, color: AppColors.amb, size: 24),
       ),
