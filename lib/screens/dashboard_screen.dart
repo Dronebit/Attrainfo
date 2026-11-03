@@ -104,7 +104,7 @@ class _Kpi extends StatelessWidget {
         Container(
           width: 44, height: 44,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha:0.1),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: color, size: 22),
@@ -330,8 +330,8 @@ class _TopDowntimeCard extends StatelessWidget {
                 Container(
                   width: 26, height: 26,
                   decoration: BoxDecoration(
-                    color: i < 3 ? AppColors.amb.withOpacity(0.14) : AppColors.panel2,
-                    border: Border.all(color: i < 3 ? AppColors.amb.withOpacity(0.35) : AppColors.line2),
+                    color: i < 3 ? AppColors.amb.withValues(alpha:0.14) : AppColors.panel2,
+                    border: Border.all(color: i < 3 ? AppColors.amb.withValues(alpha:0.35) : AppColors.line2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Center(child: Text('${i + 1}', style: TextStyle(
@@ -363,8 +363,8 @@ class _TopDowntimeCard extends StatelessWidget {
                       .map((e) => Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: e.key.color.withOpacity(0.1),
-                              border: Border.all(color: e.key.color.withOpacity(0.27)),
+                              color: e.key.color.withValues(alpha:0.1),
+                              border: Border.all(color: e.key.color.withValues(alpha:0.27)),
                               borderRadius: BorderRadius.circular(99),
                             ),
                             child: Text('${e.key.label}: ${e.value.toStringAsFixed(1)} ч', style: TextStyle(
