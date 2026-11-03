@@ -1,13 +1,15 @@
-import 'dart:convert';
+impimport 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/enums.dart';
 import '../models/models.dart';
+import '../models/operator.dart';
+import '../models/park_admin.dart';
 import '../models/shift.dart';
 import 'seed.dart';
 
 class AppDatabase extends ChangeNotifier {
-  static const _key = 'attrakontrol-v1';
+  static const _key = 'attrakontrol-v2';
 
   List<City> cities = [];
   List<ParkLocation> locations = [];
@@ -16,6 +18,8 @@ class AppDatabase extends ChangeNotifier {
   List<Technician> techs = [];
   List<Downtime> downtimes = [];
   List<Incident> incidents = [];
+  List<Operator> operators = [];
+  List<ParkAdmin> admins = [];
 
   Shift? activeShift;
   bool opSelectingRides = false;
@@ -28,6 +32,12 @@ class AppDatabase extends ChangeNotifier {
   Ride? rideById(String? id) => rides.firstWhereOrNull((r) => r.id == id);
   Technician? techById(String? id) =>
       techs.firstWhereOrNull((t) => t.id == id);
+  Operator? operatorById(String? id) =>
+      operators.firstWhereOrNull((o) => o.id == id);
+  Operator? operatorByBadge(String? uid) =>
+      operators.firstWhereOrNull((o) => o.badgeId == uid);
+  ParkAdmin? adminById(String? id) =>
+      admins.firstWhereOrNull((a) => a.id == id);
 
   String cityOfPark(Park p) {
     final l = locById(p.locId);
@@ -44,8 +54,13 @@ class AppDatabase extends ChangeNotifier {
     return [c?.name, l?.name, p?.name].where((x) => x != null).join(' · ');
   }
 
-  void startShift(String parkId) {
-    activeShift = Shift(parkId: parkId, startedAt: DateTime.now());
+  // ---- shift ----
+  void startShift(String parkId, {String? operatorId}) {
+    activeShift = Shift(
+      parkId: parkId,
+      startedAt: DateTime.now(),
+      operatorId: operatorId,
+    );
     currentParkId = parkId;
     opSelectingRides = true;
     save();
@@ -73,11 +88,13 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
+  // ---- analytics ----
   List<({String rideId, double total, Map<DowntimeReason, double> byReason})>
       downtimeByRide(int periodDays) {
     final now = DateTime.now();
     final from = now.subtract(Duration(days: periodDays));
-    final map = <String, ({double total, Map<DowntimeReason, double> byReason})>{};
+    final map = <String,
+        ({double total, Map<DowntimeReason, double> byReason})>{};
     for (final d in downtimes) {
       final s = d.start.isAfter(from) ? d.start : from;
       final e = (d.end ?? now).isBefore(now) ? (d.end ?? now) : now;
@@ -96,6 +113,7 @@ class AppDatabase extends ChangeNotifier {
       ..sort((a, b) => b.total.compareTo(a.total));
   }
 
+  // ---- save/load ----
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -108,6 +126,8 @@ class AppDatabase extends ChangeNotifier {
           'techs': techs.map((e) => e.toJson()).toList(),
           'downtimes': downtimes.map((e) => e.toJson()).toList(),
           'incidents': incidents.map((e) => e.toJson()).toList(),
+          'operators': operators.map((e) => e.toJson()).toList(),
+          'admins': admins.map((e) => e.toJson()).toList(),
           'activeShift': activeShift?.toJson(),
           'opSelectingRides': opSelectingRides,
           'currentParkId': currentParkId,
@@ -146,13 +166,16 @@ class AppDatabase extends ChangeNotifier {
           .toList(),
       'parks': (s['parks'] as List<Park>).map((e) => e.toJson()).toList(),
       'rides': (s['rides'] as List<Ride>).map((e) => e.toJson()).toList(),
-      'techs': (s['techs'] as List<Technician>).map((e) => e.toJson()).toList(),
-      'downtimes': (s['downtimes'] as List<Downtime>)
-          .map((e) => e.toJson())
-          .toList(),
-      'incidents': (s['incidents'] as List<Incident>)
-          .map((e) => e.toJson())
-          .toList(),
+      'techs':
+          (s['techs'] as List<Technician>).map((e) => e.toJson()).toList(),
+      'downtimes':
+          (s['downtimes'] as List<Downtime>).map((e) => e.toJson()).toList(),
+      'incidents':
+          (s['incidents'] as List<Incident>).map((e) => e.toJson()).toList(),
+      'operators':
+          (s['operators'] as List<Operator>).map((e) => e.toJson()).toList(),
+      'admins':
+          (s['admins'] as List<ParkAdmin>).map((e) => e.toJson()).toList(),
     };
   }
 
@@ -167,6 +190,10 @@ class AppDatabase extends ChangeNotifier {
         (j['downtimes'] as List).map((e) => Downtime.fromJson(e)).toList();
     incidents =
         (j['incidents'] as List).map((e) => Incident.fromJson(e)).toList();
+    operators =
+        ((j['operators'] as List?) ?? []).map((e) => Operator.fromJson(e)).toList();
+    admins =
+        ((j['admins'] as List?) ?? []).map((e) => ParkAdmin.fromJson(e)).toList();
     final sh = j['activeShift'];
     activeShift = sh is Map<String, dynamic> ? Shift.fromJson(sh) : null;
     opSelectingRides = j['opSelectingRides'] ?? false;
