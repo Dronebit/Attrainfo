@@ -1,0 +1,58 @@
+name: Build Flutter APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Scaffold Android platform (only if missing)
+        run: |
+          if [ ! -d "android" ]; then
+            cp -r lib /tmp/lib_backup
+            cp pubspec.yaml /tmp/pubspec_backup
+            PROJECT_NAME=$(grep '^name:' pubspec.yaml | awk '{print $2}')
+            flutter create . --project-name "$PROJECT_NAME" --platforms=android
+            rm -rf lib
+            cp -r /tmp/lib_backup lib
+            cp /tmp/pubspec_backup pubspec.yaml
+          fi
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
