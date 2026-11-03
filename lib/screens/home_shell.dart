@@ -27,7 +27,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final db = context.watch<AppDatabase>();
+  
   
     // Примечание: см. enum IncidentStatus — здесь упрощённо
     final screens = const [
