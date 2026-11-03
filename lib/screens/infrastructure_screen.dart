@@ -520,21 +520,22 @@ class _InfrastructureScreenState extends State<InfrastructureScreen> {
       ),
     );
     if (ok != true || cityId == null) return;
+    final cid = cityId!;
     final name = ctrl.text.trim();
     if (name.isEmpty) return;
     if (editing == null) {
-      final newLoc = ParkLocation(id: _uid(), cityId: cityId, name: name);
+      final newLoc = ParkLocation(id: _uid(), cityId: cid, name: name);
       db.locations.add(newLoc);
       if (mounted) {
         setState(() {
-          _selCityId = cityId;
+          _selCityId = cid;
           _selLocId = newLoc.id;
           _selParkId = null;
         });
       }
     } else {
       editing.name = name;
-      editing.cityId = cityId;
+      editing.cityId = cid;
     }
     await db.save();
     if (!mounted) return;
@@ -595,22 +596,23 @@ class _InfrastructureScreenState extends State<InfrastructureScreen> {
       ),
     );
     if (ok != true || locId == null) return;
+    final lid = locId!;
     final name = ctrl.text.trim();
     if (name.isEmpty) return;
     if (editing == null) {
-      final newPark = Park(id: _uid(), locId: locId, name: name);
+      final newPark = Park(id: _uid(), locId: lid, name: name);
       db.parks.add(newPark);
       if (mounted) {
-        final loc = db.locById(locId);
+        final loc = db.locById(lid);
         setState(() {
           _selCityId = loc?.cityId;
-          _selLocId = locId;
+          _selLocId = lid;
           _selParkId = newPark.id;
         });
       }
     } else {
       editing.name = name;
-      editing.locId = locId;
+      editing.locId = lid;
     }
     await db.save();
     if (!mounted) return;
@@ -692,13 +694,14 @@ class _InfrastructureScreenState extends State<InfrastructureScreen> {
       ),
     );
     if (ok != true || parkId == null) return;
+    final pid = parkId!;
     final name = nameCtrl.text.trim();
     if (name.isEmpty) return;
     final year = int.tryParse(yearCtrl.text.trim());
     if (editing == null) {
       final newRide = Ride(
         id: _uid(),
-        parkId: parkId,
+        parkId: pid,
         name: name,
         type: type,
         year: year,
@@ -706,11 +709,11 @@ class _InfrastructureScreenState extends State<InfrastructureScreen> {
       );
       db.rides.add(newRide);
       if (mounted) {
-        setState(() => _selParkId = parkId);
+        setState(() => _selParkId = pid);
       }
     } else {
       editing.name = name;
-      editing.parkId = parkId;
+      editing.parkId = pid;
       editing.type = type;
       editing.year = year;
     }
