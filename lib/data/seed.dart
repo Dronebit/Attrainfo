@@ -52,7 +52,7 @@ Map<String, dynamic> buildSeed() {
     ],
     'downtimes': [
       Downtime(id: 'd1', rideId: 'r2', reason: DowntimeReason.repair, techId: 't1', start: h(26), comment: 'Замена оси опорных катков, обнаружен износ сверх допуска'),
-      Downtime(id: 'd2', rideId: 'r9', reason: DowntimeReason.parts, techId: 't2', start: d(3).subtract(Duration(hours: 4)), planned: now.add(const Duration(days: 4)), comment: 'Ожидание подшипника главного узла'),
+      Downtime(id: 'd2', rideId: 'r9', reason: DowntimeReason.parts, techId: 't2', start: d(3).subtract(const Duration(hours: 4)), planned: now.add(const Duration(days: 4)), comment: 'Ожидание подшипника главного узла'),
       Downtime(id: 'd3', rideId: 'r13', reason: DowntimeReason.diagnostics, techId: 't3', start: h(5), comment: 'Вибрация опорной конструкции, экспертное обследование'),
       Downtime(id: 'd4', rideId: 'r8', reason: DowntimeReason.retired, techId: 't4', start: d(18), comment: 'Выработка ресурса, планируется демонтаж'),
       Downtime(id: 'd5', rideId: 'r3', reason: DowntimeReason.diagnostics, techId: 't3', start: d(6), end: d(6).add(const Duration(hours: 3)), comment: 'Плановое обследование карусели', done: 'Осмотр выполнен'),
