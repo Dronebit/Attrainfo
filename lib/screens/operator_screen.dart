@@ -54,7 +54,7 @@ class _WelcomeState extends State<_Welcome> {
             children: [
               const Text(OperatorScreen._opName,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 22, fontWeight: FontWeight.w700)),
               const SizedBox(height: 10),
               const Text('👋', textAlign: TextAlign.center,
