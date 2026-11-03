@@ -70,7 +70,7 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
         _primaryBtn(
           icon: Icons.add,
           label: 'Событие',
-          onTap: () => _openIncidentDialog(context, db, null),
+          onTap: () => _openIncidentDialog(db, null),
         ),
       ]),
       const SizedBox(height: 14),
@@ -127,7 +127,7 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
               SizedBox(
                 width: w,
                 child: _dropdown<String>(
-                  value: _filterParkId,
+                  initialValue: _filterParkId,
                   label: 'Парк',
                   items: [
                     const DropdownMenuItem(value: null, child: Text('Все парки')),
@@ -147,7 +147,7 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
               SizedBox(
                 width: w,
                 child: _dropdown<String>(
-                  value: _filterRideId,
+                  initialValue: _filterRideId,
                   label: 'Аттракцион',
                   items: [
                     const DropdownMenuItem(value: null, child: Text('Все аттракционы')),
@@ -165,7 +165,7 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
               SizedBox(
                 width: w,
                 child: _dropdown<Severity>(
-                  value: _filterSev,
+                  initialValue: _filterSev,
                   label: 'Важность',
                   items: [
                     const DropdownMenuItem(value: null, child: Text('Любая важность')),
@@ -197,13 +197,13 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
       if (filtered.isEmpty)
         _emptyState()
       else
-        for (final i in filtered) _incidentCard(context, db, i),
+        for (final i in filtered) _incidentCard(db, i),
     ]);
   }
 
   // ============ card ============
 
-  Widget _incidentCard(BuildContext context, AppDatabase db, Incident i) {
+  Widget _incidentCard(AppDatabase db, Incident i) {
     final ride = db.rideById(i.rideId);
     final tech = db.techById(i.techId);
     final isResolved = i.status == IncidentStatus.resolved;
@@ -242,7 +242,8 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
           const SizedBox(width: 8),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Text(DateFormat('dd.MM.yyyy HH:mm').format(i.ts),
-                style: const TextStyle(fontSize: 11.5, color: AppColors.mut, fontFamily: 'monospace')),
+                style: const TextStyle(
+                    fontSize: 11.5, color: AppColors.mut, fontFamily: 'monospace')),
             const SizedBox(height: 2),
             _badge(i.status.label, i.status.color),
           ]),
@@ -273,15 +274,15 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
               icon: Icons.check,
               label: 'Устранено',
               color: AppColors.grn,
-              onTap: () => _resolveIncident(context, db, i),
+              onTap: () => _resolveIncident(db, i),
             ),
           const Spacer(),
-          _iconBtn(icon: Icons.edit_outlined, onTap: () => _openIncidentDialog(context, db, i)),
+          _iconBtn(icon: Icons.edit_outlined, onTap: () => _openIncidentDialog(db, i)),
           const SizedBox(width: 6),
           _iconBtn(
             icon: Icons.delete_outline,
             danger: true,
-            onTap: () => _deleteIncident(context, db, i),
+            onTap: () => _deleteIncident(db, i),
           ),
         ]),
       ]),
@@ -306,10 +307,9 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
 
   // ============ dialog: create / edit ============
 
-  Future<void> _openIncidentDialog(
-      BuildContext context, AppDatabase db, Incident? editing) async {
+  Future<void> _openIncidentDialog(AppDatabase db, Incident? editing) async {
     if (db.rides.isEmpty) {
-      _snack(context, 'Сначала добавьте аттракцион в разделе «Инфраструктура»');
+      _snack('Сначала добавьте аттракцион в разделе «Инфраструктура»');
       return;
     }
 
@@ -345,119 +345,141 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.panel,
-          title: Text(editing == null ? 'Регистрация события' : 'Редактирование события'),
+          title: Text(editing == null
+              ? 'Регистрация события'
+              : 'Редактирование события'),
           content: SizedBox(
             width: 520,
             child: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                // ride
-                DropdownButtonFormField<String>(
-                  value: rideId,
-                  decoration: const InputDecoration(labelText: 'Аттракцион *'),
-                  isExpanded: true,
-                  items: rideItems,
-                  onChanged: (v) {
-                    if (v != null && !v.startsWith('__h_')) setS(() => rideId = v);
-                  },
-                ),
-                const SizedBox(height: 14),
-
-                // type chips
-                const Text('Тип события *',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.mut)),
-                const SizedBox(height: 8),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  for (final t in IncidentType.values)
-                    _chip(
-                      label: t.label,
-                      icon: t.icon,
-                      color: t.color,
-                      active: type == t,
-                      onTap: () => setS(() => type = t),
-                    ),
-                ]),
-                const SizedBox(height: 14),
-
-                // severity chips
-                const Text('Степень важности',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.mut)),
-                const SizedBox(height: 8),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  for (final s in Severity.values)
-                    _chip(
-                      label: s.label,
-                      color: s.color,
-                      active: sev == s,
-                      onTap: () => setS(() => sev = s),
-                    ),
-                ]),
-                const SizedBox(height: 14),
-
-                // date + status
-                Row(children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () async {
-                        final picked = await _pickDateTime(ctx, ts);
-                        if (picked != null) setS(() => ts = picked);
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // ride
+                    DropdownButtonFormField<String>(
+                      initialValue: rideId,
+                      decoration: const InputDecoration(labelText: 'Аттракцион *'),
+                      isExpanded: true,
+                      items: rideItems,
+                      onChanged: (v) {
+                        if (v != null && !v.startsWith('__h_')) {
+                          setS(() => rideId = v);
+                        }
                       },
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Дата и время *',
-                          suffixIcon: Icon(Icons.calendar_today, size: 16),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // type chips
+                    const Text('Тип события *',
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.mut)),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      for (final t in IncidentType.values)
+                        _chip(
+                          label: t.label,
+                          icon: t.icon,
+                          color: t.color,
+                          active: type == t,
+                          onTap: () => setS(() => type = t),
                         ),
-                        child: Text(DateFormat('dd.MM.yyyy HH:mm').format(ts),
-                            style: const TextStyle(fontSize: 13)),
+                    ]),
+                    const SizedBox(height: 14),
+
+                    // severity chips
+                    const Text('Степень важности',
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.mut)),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      for (final s in Severity.values)
+                        _chip(
+                          label: s.label,
+                          color: s.color,
+                          active: sev == s,
+                          onTap: () => setS(() => sev = s),
+                        ),
+                    ]),
+                    const SizedBox(height: 14),
+
+                    // date + status
+                    Row(children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await _pickDateTime(ctx, ts);
+                            if (picked != null) {
+                              setS(() => ts = picked);
+                            }
+                          },
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Дата и время *',
+                              suffixIcon: Icon(Icons.calendar_today, size: 16),
+                            ),
+                            child: Text(DateFormat('dd.MM.yyyy HH:mm').format(ts),
+                                style: const TextStyle(fontSize: 13)),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: DropdownButtonFormField<IncidentStatus>(
-                      value: status,
-                      decoration: const InputDecoration(labelText: 'Статус'),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: DropdownButtonFormField<IncidentStatus>(
+                          initialValue: status,
+                          decoration: const InputDecoration(labelText: 'Статус'),
+                          items: [
+                            for (final st in IncidentStatus.values)
+                              DropdownMenuItem(value: st, child: Text(st.label)),
+                          ],
+                          onChanged: (v) => setS(() => status = v ?? status),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 12),
+
+                    // tech
+                    DropdownButtonFormField<String>(
+                      initialValue: techId ?? '',
+                      decoration:
+                          const InputDecoration(labelText: 'Обнаружил (сотрудник)'),
+                      isExpanded: true,
                       items: [
-                        for (final st in IncidentStatus.values)
-                          DropdownMenuItem(value: st, child: Text(st.label)),
+                        const DropdownMenuItem(
+                            value: '', child: Text('— не назначен —')),
+                        for (final t in db.techs)
+                          DropdownMenuItem(
+                            value: t.id,
+                            child: Text('${t.name} · ${t.role}',
+                                overflow: TextOverflow.ellipsis),
+                          ),
                       ],
-                      onChanged: (v) => setS(() => status = v ?? status),
+                      onChanged: (v) => setS(
+                          () => techId = (v == null || v.isEmpty) ? null : v),
                     ),
-                  ),
-                ]),
-                const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                // tech
-                DropdownButtonFormField<String>(
-                  value: techId ?? '',
-                  decoration: const InputDecoration(labelText: 'Обнаружил (сотрудник)'),
-                  isExpanded: true,
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('— не назначен —')),
-                    for (final t in db.techs)
-                      DropdownMenuItem(
-                        value: t.id,
-                        child: Text('${t.name} · ${t.role}', overflow: TextOverflow.ellipsis),
+                    // description
+                    TextField(
+                      controller: descCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Описание неисправности *',
+                        hintText:
+                            'Что обнаружено, при каких обстоятельствах, характер проявления…',
+                        alignLabelWithHint: true,
                       ),
-                  ],
-                  onChanged: (v) => setS(() => techId = (v == null || v.isEmpty) ? null : v),
-                ),
-                const SizedBox(height: 12),
-
-                // description
-                TextField(
-                  controller: descCtrl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Описание неисправности *',
-                    hintText: 'Что обнаружено, при каких обстоятельствах, характер проявления…',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-              ]),
+                    ),
+                  ]),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Отмена')),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.amb,
@@ -475,14 +497,16 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
 
     final desc = descCtrl.text.trim();
     if (rideId == null || desc.isEmpty) {
-      if (context.mounted) _snack(context, 'Заполните обязательные поля');
+      if (!mounted) return;
+      _snack('Заполните обязательные поля');
       return;
     }
+    final rid = rideId!;
 
     if (editing == null) {
       db.incidents.add(Incident(
         id: _uid(),
-        rideId: rideId!,
+        rideId: rid,
         type: type,
         severity: sev,
         status: status,
@@ -492,7 +516,7 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
         resolvedTs: status == IncidentStatus.resolved ? ts : null,
       ));
     } else {
-      editing.rideId = rideId!;
+      editing.rideId = rid;
       editing.type = type;
       editing.severity = sev;
       editing.status = status;
@@ -506,19 +530,21 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
       }
     }
     await db.save();
-    if (context.mounted) _snack(context, editing == null ? 'Событие создано' : 'Событие обновлено');
+    if (!mounted) return;
+    _snack(editing == null ? 'Событие создано' : 'Событие обновлено');
   }
 
   // ============ actions ============
 
-  Future<void> _resolveIncident(BuildContext context, AppDatabase db, Incident i) async {
+  Future<void> _resolveIncident(AppDatabase db, Incident i) async {
     i.status = IncidentStatus.resolved;
     i.resolvedTs = DateTime.now();
     await db.save();
-    if (context.mounted) _snack(context, 'Событие отмечено как устранённое');
+    if (!mounted) return;
+    _snack('Событие отмечено как устранённое');
   }
 
-  Future<void> _deleteIncident(BuildContext context, AppDatabase db, Incident i) async {
+  Future<void> _deleteIncident(AppDatabase db, Incident i) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -527,7 +553,9 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
         content: const Text('Запись будет удалена без возможности восстановления.',
             style: TextStyle(fontSize: 13, color: AppColors.mut)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.red),
             onPressed: () => Navigator.pop(ctx, true),
@@ -539,14 +567,16 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
     if (ok != true) return;
     db.incidents.removeWhere((x) => x.id == i.id);
     await db.save();
-    if (context.mounted) _snack(context, 'Событие удалено');
+    if (!mounted) return;
+    _snack('Событие удалено');
   }
 
   // ============ export csv ============
 
   Future<void> _exportCsv(AppDatabase db, List<Incident> list) async {
     final buf = StringBuffer();
-    buf.writeln('Дата;Город;Локация;Парк;Аттракцион;Тип;Важность;Описание;Статус;Обнаружил;Устранено');
+    buf.writeln(
+        'Дата;Город;Локация;Парк;Аттракцион;Тип;Важность;Описание;Статус;Обнаружил;Устранено');
     for (final i in list) {
       final r = db.rideById(i.rideId);
       final p = r == null ? null : db.parkById(r.parkId);
@@ -564,12 +594,15 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
         i.desc,
         i.status.label,
         t?.name ?? '',
-        i.resolvedTs != null ? DateFormat('dd.MM.yyyy HH:mm').format(i.resolvedTs!) : '',
+        i.resolvedTs != null
+            ? DateFormat('dd.MM.yyyy HH:mm').format(i.resolvedTs!)
+            : '',
       ];
       buf.writeln(row.map((v) => '"${v.replaceAll('"', '""')}"').join(';'));
     }
     await Clipboard.setData(ClipboardData(text: buf.toString()));
-    if (mounted) _snack(context, 'CSV (${list.length} строк) скопирован в буфер обмена');
+    if (!mounted) return;
+    _snack('CSV (${list.length} строк) скопирован в буфер обмена');
   }
 
   // ============ helpers ============
@@ -591,7 +624,7 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
-  void _snack(BuildContext context, String msg) {
+  void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
     );
@@ -634,13 +667,13 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
   }
 
   Widget _dropdown<T>({
-    required T? value,
+    required T? initialValue,
     required String label,
     required List<DropdownMenuItem<T?>> items,
     required ValueChanged<T?> onChanged,
   }) {
     return DropdownButtonFormField<T?>(
-      value: value,
+      initialValue: initialValue,
       isExpanded: true,
       decoration: InputDecoration(labelText: label),
       items: items,
@@ -656,7 +689,8 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
           borderRadius: BorderRadius.circular(99),
         ),
         child: Text(text,
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+            style:
+                TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
       );
 
   Widget _countBadge(String text) => Container(
@@ -667,10 +701,15 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
           borderRadius: BorderRadius.circular(99),
         ),
         child: Text(text,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.mut)),
+            style: const TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.mut)),
       );
 
-  Widget _iconBtn({required IconData icon, required VoidCallback onTap, bool danger = false}) {
+  Widget _iconBtn({
+    required IconData icon,
+    required VoidCallback onTap,
+    bool danger = false,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -681,7 +720,7 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: AppColors.line2),
         ),
-        child: Icon(icon, size: 15, color: danger ? AppColors.mut : AppColors.mut),
+        child: Icon(icon, size: 15, color: AppColors.mut),
       ),
     );
   }
@@ -706,13 +745,18 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
           Icon(icon, size: 13, color: color),
           const SizedBox(width: 6),
           Text(label,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+              style: TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600, color: color)),
         ]),
       ),
     );
   }
 
-  Widget _primaryBtn({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _primaryBtn({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(11),
@@ -736,7 +780,11 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
     );
   }
 
-  Widget _ghostBtn({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _ghostBtn({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(11),
@@ -750,7 +798,10 @@ class _IncidentsScreenState extends State<IncidentsScreen> {
           Icon(icon, size: 15, color: AppColors.mut),
           const SizedBox(width: 6),
           Text(label,
-              style: const TextStyle(fontSize: 12.5, color: AppColors.mut, fontWeight: FontWeight.w600)),
+              style: const TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.mut,
+                  fontWeight: FontWeight.w600)),
         ]),
       ),
     );
