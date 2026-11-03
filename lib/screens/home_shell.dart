@@ -8,6 +8,7 @@ import 'downtime_screen.dart';
 import 'infrastructure_screen.dart';
 import 'technicians_screen.dart';
 import 'operator_screen.dart';
+import 'operators_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -25,6 +26,7 @@ class _HomeShellState extends State<HomeShell> {
     ('Инфраструктура', 'Города · локации · парки · аттракционы', Icons.layers_outlined),
     ('Сервисная служба', 'Сотрудники и назначения', Icons.people_outline),
     ('Оператор', 'Смена · аттракционы · сообщения о проблемах', Icons.support_agent),
+    ('Сотрудники', 'Управление операторами · бейджи · PIN', Icons.badge_outlined),
   ];
 
   @override
@@ -36,6 +38,7 @@ class _HomeShellState extends State<HomeShell> {
       InfrastructureScreen(),
       TechniciansScreen(),
       OperatorScreen(),
+      OperatorsScreen(),
     ];
 
     final isWide = MediaQuery.of(context).size.width >= 900;
