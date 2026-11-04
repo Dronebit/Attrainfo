@@ -88,19 +88,7 @@ Map<String, dynamic> buildSeed() {
   Operator(id: 'op3', name: 'Денис Волков', phone: '+7 900 555-55-66', pin: '3333'),
   Operator(id: 'op4', name: 'Ольга Никитина', phone: '+7 900 555-77-88', pin: '4444'),
 ],
-'operatorLinks': [
-  OperatorParkLink(id: 'lnk1', operatorId: 'op1', parkId: 'p1',
-      status: LinkStatus.approved, initiatorAdminId: 'adm1',
-      approverAdminId: 'adm2', approvedAt: DateTime.now()),
-  OperatorParkLink(id: 'lnk2', operatorId: 'op2', parkId: 'p1',
-      status: LinkStatus.approved, initiatorAdminId: 'adm1',
-      approverAdminId: 'adm2', approvedAt: DateTime.now()),
-  OperatorParkLink(id: 'lnk3', operatorId: 'op3', parkId: 'p2',
-      status: LinkStatus.approved, initiatorAdminId: 'adm3',
-      approvedAt: DateTime.now()),
-  OperatorParkLink(id: 'lnk4', operatorId: 'op4', parkId: 'p3',
-      status: LinkStatus.approved, approvedAt: DateTime.now()),
-],
+
 'vacancies': [],
 'applications': [],
 
@@ -142,6 +130,19 @@ Map<String, dynamic> buildSeed() {
   ),
 ],
 
+    'operatorLinks': [
+  OperatorParkLink(id: 'lnk1', operatorId: 'op1', parkId: 'p1',
+      status: LinkStatus.approved, initiatorAdminId: 'adm1',
+      approverAdminId: 'adm2', approvedAt: DateTime.now()),
+  OperatorParkLink(id: 'lnk2', operatorId: 'op2', parkId: 'p1',
+      status: LinkStatus.approved, initiatorAdminId: 'adm1',
+      approverAdminId: 'adm2', approvedAt: DateTime.now()),
+  OperatorParkLink(id: 'lnk3', operatorId: 'op3', parkId: 'p2',
+      status: LinkStatus.approved, initiatorAdminId: 'adm3',
+      approvedAt: DateTime.now()),
+  OperatorParkLink(id: 'lnk4', operatorId: 'op4', parkId: 'p3',
+      status: LinkStatus.approved, approvedAt: DateTime.now()),
+],
     
   };
 }
