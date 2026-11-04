@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../data/app_database.dart';
 import '../data/debug_log.dart';
 import '../models/models.dart';
-import '../models/park_admin.dart';
+import '../models/employee.dart';
 import '../models/region.dart';
 import '../theme.dart';
 
@@ -15,7 +15,7 @@ class AdminPanelScreen extends StatefulWidget {
 
 class _AdminPanelScreenState extends State<AdminPanelScreen> {
   bool _unlocked = false;
-  ParkAdmin? _currentAdmin;
+  Employee? _currentAdmin;
   final Set<String> _expandedRegions = {};
 
   String _uid() => 'x${DateTime.now().microsecondsSinceEpoch}';
@@ -28,13 +28,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (admin == null) return _pinGate(db);
 
     switch (admin.role) {
-      case AdminRole.superAdmin:
+      case EmployeeRole.superAdmin:
         return _superView(db, admin);
-      case AdminRole.regionalAdmin:
+      case EmployeeRole.regionalAdmin:
         return _regionalView(db, admin);
-      case AdminRole.parkAdmin:
+      case EmployeeRole.parkAdmin:
         return _wrongRole('паркового администратора',
             'Откройте вкладку «Сотрудники» для управления операторами.');
+      default:
+        return _wrongRole('администратора',
+            'Откройте вкладку «Сотрудники» или «Сервисная служба».');
     }
   }
 
@@ -65,13 +68,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             const SizedBox(height: 8),
             TextButton(
               onPressed: () {
-                final superAdmin = db.admins.firstWhere(
-                  (a) => a.active && a.role == AdminRole.superAdmin,
-                  orElse: () => ParkAdmin(
-                      id: 'fallback',
-                      name: 'Super',
-                      role: AdminRole.superAdmin),
-                );
+                final superAdmin = db.superAdmins.isNotEmpty
+                    ? db.superAdmins.first
+                    : Employee(
+                        id: 'fallback',
+                        name: 'Super',
+                        role: EmployeeRole.superAdmin,
+                      );
                 setState(() {
                   _unlocked = true;
                   _currentAdmin = superAdmin;
@@ -120,11 +123,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (pin.isEmpty) return;
 
     if (pin == AppDatabase.masterPin) {
-      final superAdmin = db.admins.firstWhere(
-        (a) => a.active && a.role == AdminRole.superAdmin,
-        orElse: () => ParkAdmin(
-            id: 'fallback', name: 'Super', role: AdminRole.superAdmin),
-      );
+      final superAdmin = db.superAdmins.isNotEmpty
+          ? db.superAdmins.first
+          : Employee(
+              id: 'fallback', name: 'Super', role: EmployeeRole.superAdmin);
       setState(() {
         _unlocked = true;
         _currentAdmin = superAdmin;
@@ -132,15 +134,15 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       return;
     }
 
-    final admin = db.adminByPin(pin);
-    if (admin == null || admin.role == AdminRole.parkAdmin) {
+    final emp = db.employeeByPin(pin);
+    if (emp == null || !emp.isAdmin) {
       if (!mounted) return;
       _snack('Нет доступа · только super или региональный админ');
       return;
     }
     setState(() {
       _unlocked = true;
-      _currentAdmin = admin;
+      _currentAdmin = emp;
     });
   }
 
@@ -174,7 +176,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   // ═══════════ super view ═══════════
 
-  Widget _superView(AppDatabase db, ParkAdmin admin) {
+  Widget _superView(AppDatabase db, Employee admin) {
     final unassigned = db.unassignedParks;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Container(
@@ -286,7 +288,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   // ═══════════ regional view ═══════════
 
-  Widget _regionalView(AppDatabase db, ParkAdmin admin) {
+  Widget _regionalView(AppDatabase db, Employee admin) {
     final region = admin.regionId == null ? null : db.regionById(admin.regionId);
     if (region == null) {
       return _wrongRole('регионального администратора',
@@ -315,7 +317,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   // ═══════════ region card ═══════════
 
-  Widget _regionCard(AppDatabase db, ParkAdmin admin, Region region,
+  Widget _regionCard(AppDatabase db, Employee admin, Region region,
       {bool isRegional = false}) {
     final expanded = _expandedRegions.contains(region.id);
     final hierarchy = db.parksOfRegionHierarchy(region.id);
@@ -440,7 +442,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                     ...parksInLoc.map((p) => Padding(
                                           padding: const EdgeInsets.only(
                                               left: 18),
-                                          child: _parkRow(db, p),
+                                          child: _parkRow(db, admin, p),
                                         )),
                                   ],
                                 ),
@@ -457,56 +459,611 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
   }
 
-  Widget _parkRow(AppDatabase db, Park p) {
+  Widget _parkRow(AppDatabase db, Employee admin, Park p) {
     final parkAdmins = db.parkAdminsOf(p.id);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E1420),
-        borderRadius: BorderRadius.circular(8),
+    return InkWell(
+      onTap: () => _showParkCard(db, admin, p),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0E1420),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(children: [
+          const Icon(Icons.attractions, size: 14, color: AppColors.amb),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(p.name,
+                      style: const TextStyle(
+                          fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  Text(
+                    parkAdmins.isEmpty
+                        ? 'без админа'
+                        : parkAdmins
+                            .map((a) => '${a.name} (${a.pin})')
+                            .join(', '),
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        color: parkAdmins.isEmpty
+                            ? AppColors.dim
+                            : AppColors.grn),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ]),
+          ),
+          const Icon(Icons.chevron_right, size: 16, color: AppColors.dim),
+        ]),
       ),
-      child: Row(children: [
-        const Icon(Icons.attractions, size: 14, color: AppColors.amb),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
+    );
+  }
+
+  // ═══════════ КАРТОЧКА ПАРКА ═══════════
+
+  Future<void> _showParkCard(
+      AppDatabase db, Employee admin, Park park) async {
+    final admins = db.parkAdminsOf(park.id);
+    final rides = db.rides.where((r) => r.parkId == park.id).toList();
+    final activeRides =
+        rides.where((r) => r.status == RideStatus.active).length;
+    final downtimeRides =
+        rides.where((r) => r.status == RideStatus.downtime).length;
+    final operatorsCount = db.operatorsOfPark(park.id).length;
+
+    final incidentIds = rides.map((r) => r.id).toSet();
+    final openIncidents = db.incidents
+        .where((i) =>
+            incidentIds.contains(i.rideId) &&
+            i.status != IncidentStatus.resolved)
+        .length;
+    final activeDowntimes = db.downtimes
+        .where((d) =>
+            incidentIds.contains(d.rideId) &&
+            d.end == null &&
+            d.reason != DowntimeReason.retired)
+        .length;
+
+    // Собираем историю админов этого парка
+    final history = <_ParkHistoryEntry>[];
+    for (final e in db.employees) {
+      for (final h in e.history) {
+        if (h.parkId == park.id) {
+          history.add(_ParkHistoryEntry(
+            employeeName: e.name,
+            phone: e.phone,
+            entry: h,
+          ));
+        }
+      }
+    }
+    history.sort((a, b) {
+      // сначала текущие, потом по дате
+      if (a.entry.isCurrent != b.entry.isCurrent) {
+        return a.entry.isCurrent ? -1 : 1;
+      }
+      return b.entry.startedAt.compareTo(a.entry.startedAt);
+    });
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+        title: Row(children: [
+          const Icon(Icons.attractions, size: 20, color: AppColors.amb),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(p.name,
+                Text(park.name,
                     style: const TextStyle(
-                        fontSize: 12.5, fontWeight: FontWeight.w600)),
+                        fontSize: 17, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
                 Text(
-                  parkAdmins.isEmpty
-                      ? 'без админа'
-                      : parkAdmins
-                          .map((a) => '${a.name} (${a.pin})')
-                          .join(', '),
-                  style: TextStyle(
-                      fontSize: 10.5,
-                      color: parkAdmins.isEmpty
-                          ? AppColors.dim
-                          : AppColors.grn),
-                  overflow: TextOverflow.ellipsis,
+                  _parkLocationPath(db, park),
+                  style: const TextStyle(
+                      fontSize: 11.5, color: AppColors.dim),
                 ),
-              ]),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            tooltip: 'Редактировать парк',
+            color: AppColors.mut,
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _editPark(db, park);
+              if (!mounted) return;
+              _showParkCard(db, admin, park);
+            },
+          ),
+        ]),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ─── Инфо ───
+                  _parkInfoBlock(park),
+                  const SizedBox(height: 14),
+
+                  // ─── Статистика ───
+                  const _SectionTitle('СТАТИСТИКА'),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    Expanded(
+                        child: _statBox(
+                            '${rides.length}', 'аттракционов', AppColors.amb)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                        child: _statBox('$activeRides', 'в работе',
+                            AppColors.grn)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                        child: _statBox('$downtimeRides', 'в простое',
+                            AppColors.org)),
+                  ]),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    Expanded(
+                        child: _statBox(
+                            '$operatorsCount', 'операторов', AppColors.cyn)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                        child: _statBox(
+                            '$openIncidents', 'инцидентов', AppColors.red)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                        child: _statBox('$activeDowntimes', 'простоев',
+                            AppColors.pur)),
+                  ]),
+                  const SizedBox(height: 14),
+
+                  // ─── Админы ───
+                  const _SectionTitle('АДМИНИСТРАТОРЫ'),
+                  const SizedBox(height: 6),
+                  if (admins.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('Нет активных администраторов',
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.dim)),
+                    )
+                  else
+                    ...admins.map((a) => Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.panel2,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(children: [
+                            const Icon(Icons.person,
+                                size: 16, color: AppColors.grn),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                        '${a.name} · PIN ${a.pin}',
+                                        style: const TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight:
+                                                FontWeight.w600)),
+                                    if (a.phone.isNotEmpty)
+                                      Text(a.phone,
+                                          style: const TextStyle(
+                                              fontSize: 10.5,
+                                              color: AppColors.dim)),
+                                  ]),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.person_remove,
+                                  size: 16),
+                              color: AppColors.red,
+                              tooltip: 'Снять с должности',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 30, minHeight: 30),
+                              onPressed: () async {
+                                final ok = await _confirmRemoveAdmin(a);
+                                if (ok != true) return;
+                                _doRemoveFromPark(db, a);
+                                if (!ctx.mounted) return;
+                                Navigator.pop(ctx);
+                                if (!mounted) return;
+                                _showParkCard(db, admin, park);
+                              },
+                            ),
+                          ]),
+                        )),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _openParkAdminDialog(db, park);
+                      if (!mounted) return;
+                      _showParkCard(db, admin, park);
+                    },
+                    icon: const Icon(Icons.person_add, size: 16),
+                    label: const Text('Назначить админа'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.amb,
+                      side: const BorderSide(color: AppColors.amb),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // ─── История ───
+                  const _SectionTitle('ИСТОРИЯ АДМИНИСТРАТОРОВ'),
+                  const SizedBox(height: 6),
+                  if (history.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('История пуста',
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.dim)),
+                    )
+                  else
+                    ...history.map((h) => _historyRow(h)),
+                ]),
+          ),
         ),
-        IconButton(
-          icon: const Icon(Icons.person_add, size: 16),
-          color: AppColors.mut,
-          tooltip: 'Назначить админа',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-          onPressed: () => _openParkAdminDialog(db, p),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Закрыть')),
+        ],
+      ),
+    );
+  }
+
+  String _parkLocationPath(AppDatabase db, Park p) {
+    final loc = db.locById(p.locId);
+    final city = loc == null ? null : db.cityById(loc.cityId);
+    final region = db.regionsOfPark(p.id).firstOrNull;
+    return [
+      region?.name,
+      city?.name,
+      loc?.name,
+    ].where((x) => x != null).join(' · ');
+  }
+
+  Widget _parkInfoBlock(Park park) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E1420),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (park.openedAt != null)
+            _infoRow(Icons.calendar_today, 'Дата открытия',
+                _formatDate(park.openedAt!)),
+          if (park.address != null && park.address!.isNotEmpty)
+            _infoRow(Icons.place, 'Адрес', park.address!),
+          if (park.phone != null && park.phone!.isNotEmpty)
+            _infoRow(Icons.phone, 'Телефон', park.phone!),
+          if (park.openedAt == null &&
+              (park.address == null || park.address!.isEmpty) &&
+              (park.phone == null || park.phone!.isEmpty))
+            const Text(
+              'Информация не заполнена. Нажмите ✏️ чтобы добавить.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.dim),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Icon(icon, size: 13, color: AppColors.mut),
+        const SizedBox(width: 8),
+        Text('$label: ',
+            style: const TextStyle(fontSize: 12, color: AppColors.dim)),
+        Expanded(
+          child: Text(value,
+              style: const TextStyle(
+                  fontSize: 12.5, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis),
         ),
       ]),
     );
   }
 
+  Widget _statBox(String value, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(children: [
+        Text(value,
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: color,
+                fontFamily: 'monospace')),
+        Text(label,
+            style: const TextStyle(fontSize: 10, color: AppColors.dim),
+            textAlign: TextAlign.center),
+      ]),
+    );
+  }
+
+  Widget _historyRow(_ParkHistoryEntry h) {
+    final isCurrent = h.entry.isCurrent;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isCurrent
+            ? AppColors.grn.withValues(alpha: 0.05)
+            : AppColors.panel2,
+        borderRadius: BorderRadius.circular(8),
+        border: isCurrent
+            ? Border.all(color: AppColors.grn.withValues(alpha: 0.3))
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(isCurrent ? Icons.person : Icons.history,
+                size: 14,
+                color: isCurrent ? AppColors.grn : AppColors.dim),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(h.employeeName,
+                  style: const TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w600)),
+            ),
+            if (isCurrent)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AppColors.grn.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: const Text('сейчас',
+                    style: TextStyle(
+                        fontSize: 9.5,
+                        color: AppColors.grn,
+                        fontWeight: FontWeight.w700)),
+              ),
+          ]),
+          if (h.phone.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 22, top: 2),
+              child: Text(h.phone,
+                  style:
+                      const TextStyle(fontSize: 10.5, color: AppColors.dim)),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(left: 22, top: 2),
+            child: Text(
+              _formatPeriod(h.entry),
+              style: const TextStyle(fontSize: 10.5, color: AppColors.mut),
+            ),
+          ),
+          if (h.entry.reason != null && h.entry.reason!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 22, top: 2),
+              child: Text(
+                '· ${h.entry.reason}',
+                style: const TextStyle(
+                    fontSize: 10.5,
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.dim),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatPeriod(RoleHistoryEntry e) {
+    final start = _formatDate(e.startedAt);
+    if (e.endedAt == null) return 'с $start';
+    final end = _formatDate(e.endedAt!);
+    return '$start – $end';
+  }
+
+  String _formatDate(DateTime d) {
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+  }
+
+  // ═══════════ редактирование парка ═══════════
+
+  Future<void> _editPark(AppDatabase db, Park park) async {
+    final nameCtrl = TextEditingController(text: park.name);
+    final addressCtrl = TextEditingController(text: park.address ?? '');
+    final phoneCtrl = TextEditingController(text: park.phone ?? '');
+    DateTime? openedAt = park.openedAt;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.panel,
+          title: const Text('Редактировать парк'),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                          labelText: 'Название парка *'),
+                    ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final d = await showDatePicker(
+                          context: ctx,
+                          initialDate: openedAt ?? DateTime.now(),
+                          firstDate: DateTime(1950),
+                          lastDate: DateTime.now(),
+                        );
+                        if (d != null) setS(() => openedAt = d);
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Дата открытия',
+                          suffixIcon: Icon(Icons.calendar_today, size: 16),
+                        ),
+                        child: Text(
+                          openedAt == null
+                              ? 'Не указана'
+                              : _formatDate(openedAt!),
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: openedAt == null
+                                  ? AppColors.dim
+                                  : AppColors.txt),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: addressCtrl,
+                      decoration: const InputDecoration(
+                          labelText: 'Адрес',
+                          hintText: 'г. Москва, ул. Примерная, 1'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                          labelText: 'Телефон',
+                          hintText: '+7 495 000-00-00'),
+                    ),
+                  ]),
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Отмена')),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.amb,
+                  foregroundColor: const Color(0xFF1C1204)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+
+    final name = nameCtrl.text.trim();
+    if (name.isEmpty) {
+      _snack('Укажите название');
+      return;
+    }
+    park.name = name;
+    park.openedAt = openedAt;
+    park.address =
+        addressCtrl.text.trim().isEmpty ? null : addressCtrl.text.trim();
+    park.phone =
+        phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim();
+    await db.save();
+    if (!mounted) return;
+    _snack('Парк обновлён');
+  }
+
+  // ═══════════ снять админа / назначить с историей ═══════════
+
+  Future<bool?> _confirmRemoveAdmin(Employee a) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Снять с должности?'),
+        content: Text(
+            '${a.name} будет снят с должности администратора. В истории парка останется запись.',
+            style: const TextStyle(fontSize: 13, color: AppColors.mut)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Снять'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _doRemoveFromPark(AppDatabase db, Employee a) {
+    final now = DateTime.now();
+    for (final h in a.history) {
+      if (h.isCurrent) {
+        h.endedAt = now;
+        h.reason = 'Снят с должности';
+      }
+    }
+    a.parkId = null;
+    a.status = EmployeeStatus.fired;
+    a.statusChangedAt = now;
+    db.save();
+  }
+
+  void _doAssignAdminToPark(
+      AppDatabase db, Employee a, Park park, String? reason) {
+    final now = DateTime.now();
+    // Закрыть текущую активную запись
+    for (final h in a.history) {
+      if (h.isCurrent) {
+        h.endedAt = now;
+        h.reason = reason ?? 'Переведён';
+      }
+    }
+    // Создать новую
+    a.history.add(RoleHistoryEntry(
+      id: _uid(),
+      role: EmployeeRole.parkAdmin,
+      parkId: park.id,
+      startedAt: now,
+    ));
+    a.role = EmployeeRole.parkAdmin;
+    a.parkId = park.id;
+    a.regionId = null;
+    a.status = EmployeeStatus.active;
+    a.statusChangedAt = now;
+    db.save();
+  }
+
   // ═══════════ bottom sheet — меню региона ═══════════
 
   Future<void> _showRegionMenu(
-      AppDatabase db, ParkAdmin admin, Region region) async {
+      AppDatabase db, Employee admin, Region region) async {
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: AppColors.panel,
@@ -1333,8 +1890,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
   }
 
-  /// Подтверждение назначения админа на парк
-  Future<bool?> _confirmAssignAdmin(ParkAdmin admin, Park park) async {
+  Future<bool?> _confirmAssignAdmin(Employee admin, Park park) async {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1355,7 +1911,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   TextSpan(
                     text: admin.name,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w700, color: AppColors.amb2),
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.amb2),
                   ),
                   const TextSpan(text: ' администратором парка '),
                   TextSpan(
@@ -1395,7 +1952,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   // ═══════════ region dialogs ═══════════
 
   Future<void> _openRegionDialog(
-      AppDatabase db, ParkAdmin admin, Region? editing) async {
+      AppDatabase db, Employee admin, Region? editing) async {
     final nameCtrl = TextEditingController(text: editing?.name ?? '');
     final selected = <String>{...?editing?.parkIds};
 
@@ -1618,7 +2175,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           constraints: const BoxConstraints(
                               minWidth: 30, minHeight: 30),
                           onPressed: () {
-                            db.admins.removeWhere((x) => x.id == a.id);
+                            db.employees.removeWhere((x) => x.id == a.id);
                             db.save();
                             Navigator.pop(ctx);
                           },
@@ -1651,11 +2208,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   }
 
   Future<void> _assignAdminToRegion(AppDatabase db, Region region) async {
-    final candidates = db.admins.where((a) {
-      if (!a.active) return false;
+    final candidates = db.employees.where((a) {
+      if (a.status != EmployeeStatus.active) return false;
       if (a.regionId == region.id) return false;
-      return a.role == AdminRole.regionalAdmin ||
-          a.role == AdminRole.parkAdmin;
+      return a.role == EmployeeRole.regionalAdmin ||
+          a.role == EmployeeRole.parkAdmin;
     }).toList();
 
     await showDialog<void>(
@@ -1712,7 +2269,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         ),
                         TextButton(
                           onPressed: () {
-                            a.role = AdminRole.regionalAdmin;
+                            a.role = EmployeeRole.regionalAdmin;
                             a.regionId = region.id;
                             a.parkId = null;
                             db.save();
@@ -1793,7 +2350,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           constraints: const BoxConstraints(
                               minWidth: 30, minHeight: 30),
                           onPressed: () {
-                            db.admins.removeWhere((x) => x.id == a.id);
+                            db.employees.removeWhere((x) => x.id == a.id);
                             db.save();
                             Navigator.pop(ctx);
                           },
@@ -1899,9 +2456,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                     ]),
                     const SizedBox(height: 12),
                     Builder(builder: (ctx2) {
-                      final candidates = db.admins.where((a) {
-                        if (!a.active) return false;
-                        if (a.role != AdminRole.parkAdmin) return false;
+                      final candidates = db.employees.where((a) {
+                        if (a.status != EmployeeStatus.active) return false;
+                        if (a.role != EmployeeRole.parkAdmin) return false;
                         if (a.parkId == park.id) return false;
                         if (a.parkId == null) return true;
                         if (showAll) return true;
@@ -1972,10 +2529,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                   if (confirmed != true) return;
                                   if (!ctx.mounted) return;
 
-                                  a.parkId = park.id;
-                                  a.role = AdminRole.parkAdmin;
-                                  a.regionId = null;
-                                  db.save();
+                                  _doAssignAdminToPark(
+                                      db,
+                                      a,
+                                      park,
+                                      a.parkId != null
+                                          ? 'Переведён из другого парка'
+                                          : 'Назначен администратором');
 
                                   Navigator.pop(ctx);
                                   _snack('Назначен: ${a.name}');
@@ -2019,6 +2579,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Future<void> _createAdmin(AppDatabase db,
       {String? regionId, String? parkId}) async {
     final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
     final pinCtrl = TextEditingController(text: '0000');
     final isRegional = regionId != null;
 
@@ -2027,21 +2588,30 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: Text(isRegional ? 'Новый рег. админ' : 'Новый админ парка'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-            controller: nameCtrl,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'ФИО *'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: pinCtrl,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            decoration: const InputDecoration(
-                labelText: 'PIN (4–6 цифр)', counterText: ''),
-          ),
-        ]),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'ФИО *'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                  labelText: 'Телефон', hintText: '+7 900 000-00-00'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinCtrl,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              decoration: const InputDecoration(
+                  labelText: 'PIN (4–6 цифр)', counterText: ''),
+            ),
+          ]),
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -2058,6 +2628,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
     if (ok != true) return;
     final name = nameCtrl.text.trim();
+    final phone = phoneCtrl.text.trim();
     final pin = pinCtrl.text.trim();
     if (name.isEmpty) {
       _snack('Укажите ФИО');
@@ -2067,17 +2638,32 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _snack('PIN: 4–6 цифр');
       return;
     }
-    if (db.admins.any((a) => a.active && a.pin == pin)) {
+    if (db.employees
+        .any((a) => a.status == EmployeeStatus.active && a.pin == pin)) {
       _snack('PIN уже используется');
       return;
     }
-    db.admins.add(ParkAdmin(
+    final now = DateTime.now();
+    db.employees.add(Employee(
       id: _uid(),
       name: name,
+      phone: phone,
       pin: pin,
-      role: isRegional ? AdminRole.regionalAdmin : AdminRole.parkAdmin,
+      role: isRegional ? EmployeeRole.regionalAdmin : EmployeeRole.parkAdmin,
       regionId: regionId,
       parkId: parkId,
+      createdAt: now,
+      history: [
+        RoleHistoryEntry(
+          id: _uid(),
+          role: isRegional
+              ? EmployeeRole.regionalAdmin
+              : EmployeeRole.parkAdmin,
+          regionId: regionId,
+          parkId: parkId,
+          startedAt: now,
+        ),
+      ],
     ));
     await db.save();
     DebugLog.instance.info(
@@ -2129,3 +2715,30 @@ final _cardDeco = BoxDecoration(
   border: Border.all(color: AppColors.line),
   borderRadius: BorderRadius.circular(14),
 );
+
+// ═══════════ вспомогательные виджеты ═══════════
+
+class _SectionTitle extends StatelessWidget {
+  final String text;
+  const _SectionTitle(this.text);
+  @override
+  Widget build(BuildContext context) {
+    return Text(text,
+        style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: AppColors.dim,
+            letterSpacing: 0.6));
+  }
+}
+
+class _ParkHistoryEntry {
+  final String employeeName;
+  final String phone;
+  final RoleHistoryEntry entry;
+  _ParkHistoryEntry({
+    required this.employeeName,
+    required this.phone,
+    required this.entry,
+  });
+}
