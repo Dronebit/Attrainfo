@@ -1024,4 +1024,198 @@ class _InfrastructureScreenState extends State<InfrastructureScreen> {
                             r.color.withValues(alpha: 0.22),
                         labelStyle: TextStyle(
                           color:
-                              reason == r ? r.color : App
+                              reason == r ? r.color : AppColors.mut,
+                          fontSize: 12,
+                        ),
+                        backgroundColor: AppColors.panel2,
+                        side: BorderSide(
+                          color: reason == r
+                              ? r.color.withValues(alpha: 0.4)
+                              : AppColors.line2,
+                        ),
+                      ),
+                  ]),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    initialValue: techId ?? '',
+                    decoration: const InputDecoration(
+                        labelText: 'Сервисный сотрудник'),
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem(
+                          value: '', child: Text('— не назначен —')),
+                      for (final t in db.techs)
+                        DropdownMenuItem(
+                          value: t.id,
+                          child: Text('${t.name} · ${t.role}',
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (v) => setS(() =>
+                        techId = (v == null || v.isEmpty) ? null : v),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: commentCtrl,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Комментарий',
+                      hintText: 'Причина, характер работ…',
+                    ),
+                  ),
+                ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Отмена')),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Оформить'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    db.downtimes.add(Downtime(
+      id: _uid(),
+      rideId: ride.id,
+      reason: reason,
+      techId: techId,
+      start: DateTime.now(),
+      comment: commentCtrl.text.trim(),
+    ));
+    ride.status = RideStatus.downtime;
+    await db.save();
+    if (!mounted) return;
+    _snack('«${ride.name}» переведён в простой');
+  }
+
+  Future<void> _reviveRide(AppDatabase db, Ride ride) async {
+    final ok = await _confirm(
+      'Вернуть в эксплуатацию?',
+      '«${ride.name}» снова получит статус «В работе».',
+      danger: false,
+    );
+    if (!ok) return;
+    ride.status = RideStatus.active;
+    await db.save();
+    if (!mounted) return;
+    _snack('«${ride.name}» возвращён в работу');
+  }
+
+  // ═══════════════ deletions ═══════════════
+
+  Future<void> _deleteCity(AppDatabase db, City city) async {
+    final locIds = db.locations
+        .where((l) => l.cityId == city.id)
+        .map((l) => l.id)
+        .toSet();
+    final parkIds = db.parks
+        .where((p) => locIds.contains(p.locId))
+        .map((p) => p.id)
+        .toSet();
+    final rideIds = db.rides
+        .where((r) => parkIds.contains(r.parkId))
+        .map((r) => r.id)
+        .toSet();
+    final ok = await _confirm(
+      'Удалить город?',
+      'Будут удалены: локаций — ${locIds.length}, парков — ${parkIds.length}, '
+          'аттракционов — ${rideIds.length}, а также связанные события и простои.',
+    );
+    if (!ok) return;
+    db.incidents.removeWhere((i) => rideIds.contains(i.rideId));
+    db.downtimes.removeWhere((d) => rideIds.contains(d.rideId));
+    db.rides.removeWhere((r) => parkIds.contains(r.parkId));
+    db.parks.removeWhere((p) => locIds.contains(p.locId));
+    db.locations.removeWhere((l) => l.cityId == city.id);
+    db.cities.remove(city);
+    if (mounted) {
+      setState(() {
+        _selCityId = null;
+        _selLocId = null;
+        _selParkId = null;
+      });
+    }
+    await db.save();
+    if (!mounted) return;
+    _snack('Город и вложенные объекты удалены');
+  }
+
+  Future<void> _deleteLoc(AppDatabase db, ParkLocation loc) async {
+    final parkIds = db.parks
+        .where((p) => p.locId == loc.id)
+        .map((p) => p.id)
+        .toSet();
+    final rideIds = db.rides
+        .where((r) => parkIds.contains(r.parkId))
+        .map((r) => r.id)
+        .toSet();
+    final ok = await _confirm(
+      'Удалить локацию?',
+      'Будут удалены: парков — ${parkIds.length}, аттракционов — ${rideIds.length}, '
+          'а также связанные события и простои.',
+    );
+    if (!ok) return;
+    db.incidents.removeWhere((i) => rideIds.contains(i.rideId));
+    db.downtimes.removeWhere((d) => rideIds.contains(d.rideId));
+    db.rides.removeWhere((r) => parkIds.contains(r.parkId));
+    db.parks.removeWhere((p) => p.locId == loc.id);
+    db.locations.remove(loc);
+    if (mounted) {
+      setState(() {
+        _selLocId = null;
+        _selParkId = null;
+      });
+    }
+    await db.save();
+    if (!mounted) return;
+    _snack('Локация удалена');
+  }
+
+  Future<void> _deletePark(AppDatabase db, Park park) async {
+    final rideIds =
+        db.rides.where((r) => r.parkId == park.id).map((r) => r.id).toSet();
+    final ok = await _confirm(
+      'Удалить парк?',
+      'Будут удалены аттракционы (${rideIds.length}) и связанные события и простои.',
+    );
+    if (!ok) return;
+    db.incidents.removeWhere((i) => rideIds.contains(i.rideId));
+    db.downtimes.removeWhere((d) => rideIds.contains(d.rideId));
+    db.rides.removeWhere((r) => r.parkId == park.id);
+    db.parks.remove(park);
+    // Убираем из регионов
+    for (final r in db.regions) {
+      r.parkIds.remove(park.id);
+    }
+    if (mounted) {
+      setState(() => _selParkId = null);
+    }
+    await db.save();
+    if (!mounted) return;
+    _snack('Парк удалён');
+  }
+
+  Future<void> _deleteRide(AppDatabase db, Ride ride) async {
+    final ni = db.incidents.where((i) => i.rideId == ride.id).length;
+    final nd = db.downtimes.where((d) => d.rideId == ride.id).length;
+    final ok = await _confirm(
+      'Удалить аттракцион?',
+      '«${ride.name}». Будут также удалены связанные записи: событий — $ni, простоев — $nd.',
+    );
+    if (!ok) return;
+    db.incidents.removeWhere((i) => i.rideId == ride.id);
+    db.downtimes.removeWhere((d) => d.rideId == ride.id);
+    db.rides.remove(ride);
+    await db.save();
+    if (!mounted) return;
+    _snack('Аттракцион удалён');
+  }
+}
