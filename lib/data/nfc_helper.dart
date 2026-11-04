@@ -1,22 +1,33 @@
+import 'dart:async';
 import 'package:nfc_manager/nfc_manager.dart';
 import 'package:nfc_manager/nfc_manager_android.dart';
 import 'debug_log.dart';
 
 class NfcHelper {
-  static Future<String?> scanBadge() async {
+  static Future<String?> scanBadge({
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
     final log = DebugLog.instance;
-    log.nfc('--- scanBadge: start ---');
+    final completer = Completer<String?>();
 
-    String? result;
+    log.nfc('--- scanBadge: start (timeout ${timeout.inSeconds}s) ---');
+
+    Future<void> finishSession() async {
+      try {
+        await NfcManager.instance.stopSession();
+        log.nfc('session stopped');
+      } catch (e) {
+        log.warn('stopSession error: $e');
+      }
+    }
 
     try {
-      log.nfc('startSession (iso14443)');
+      log.nfc('startSession (iso14443) — ждём бейдж...');
       await NfcManager.instance.startSession(
         pollingOptions: {NfcPollingOption.iso14443},
         onDiscovered: (NfcTag tag) async {
           log.nfc('tag discovered');
 
-          // Определяем все совпадающие типы
           final types = <String>[];
           try { if (NfcAAndroid.from(tag) != null) types.add('NfcA'); } catch (_) {}
           try { if (NfcBAndroid.from(tag) != null) types.add('NfcB'); } catch (_) {}
@@ -30,23 +41,35 @@ class NfcHelper {
 
           log.nfc('types: ${types.isEmpty ? "(none)" : types.join(", ")}');
 
-          result = _readUid(tag, log);
-          log.nfc('uid: ${result ?? "(null)"}');
+          final uid = _readUid(tag, log);
+          log.nfc('uid: ${uid ?? "(null)"}');
 
-          try {
-            await NfcManager.instance.stopSession();
-            log.nfc('session stopped');
-          } catch (e) {
-            log.warn('stopSession error: $e');
+          await finishSession();
+
+          if (!completer.isCompleted) {
+            completer.complete(uid);
           }
         },
       );
     } catch (e, st) {
-      log.error('scanBadge exception: $e');
+      log.error('startSession exception: $e');
       final stShort = st.toString().split('\n').take(3).join(' | ');
       log.error('  stack: $stShort');
-      throw Exception('NFC: $e');
+      if (!completer.isCompleted) {
+        completer.completeError(Exception('NFC: $e'));
+      }
+      return null;
     }
+
+    // Ждём либо onDiscovered, либо таймаут
+    final result = await completer.future.timeout(
+      timeout,
+      onTimeout: () async {
+        log.warn('timeout ${timeout.inSeconds}s — бейдж не приложен');
+        await finishSession();
+        return null;
+      },
+    );
 
     log.nfc('--- scanBadge: end (${result ?? "no result"}) ---');
     return result;
