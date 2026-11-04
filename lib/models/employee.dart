@@ -9,8 +9,8 @@ enum EmployeeRole {
 extension EmployeeRoleX on EmployeeRole {
   String get label => const {
         EmployeeRole.superAdmin: 'Super',
-        EmployeeRole.regionalAdmin: 'Рег.Администратор',
-        EmployeeRole.parkAdmin: 'Админинстратор Парк',
+        EmployeeRole.regionalAdmin: 'Рег.Адм.',
+        EmployeeRole.parkAdmin: 'Адм.Парк',
         EmployeeRole.operator: 'Оператор',
         EmployeeRole.technician: 'Механик',
       }[this]!;
