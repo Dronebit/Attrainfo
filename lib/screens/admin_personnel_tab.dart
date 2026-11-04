@@ -1118,36 +1118,23 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             ),
             const SizedBox(width: 6),
 
-            // PIN и Статус
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  'PIN ${e.pin}',
-                  style: const TextStyle(
-                      fontSize: 10,
-                      fontFamily: 'monospace',
-                      color: AppColors.mut),
-                ),
-                if (e.status != EmployeeStatus.active)
-                  Text(
-                    e.status.label,
-                    style: TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w600,
-                        color: color),
-                  )
-                else
-                  Container(
-                    width: 5,
-                    height: 5,
-                    margin: const EdgeInsets.only(top: 2),
-                    decoration: BoxDecoration(
-                        color: color, shape: BoxShape.circle),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 2),
+            // Статус (вместо PIN)
+            if (e.status != EmployeeStatus.active)
+              Text(
+                e.status.label,
+                style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    color: color),
+              )
+            else
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+            
+            const SizedBox(width: 4),
             const Icon(Icons.chevron_right, size: 14, color: AppColors.dim),
           ],
         ),
