@@ -57,7 +57,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
 
     return Column(
       children: [
-        // Плашка роли
         Container(
           padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           decoration: BoxDecoration(
@@ -71,8 +70,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                         : AppColors.blu.withValues(alpha: 0.4))),
           ),
           child: Row(children: [
-            Icon(
-                isSuper ? Icons.shield : Icons.map_outlined,
+            Icon(isSuper ? Icons.shield : Icons.map_outlined,
                 size: 18,
                 color: isSuper ? AppColors.pur : AppColors.blu),
             const SizedBox(width: 8),
@@ -95,12 +93,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             TextButton.icon(
               onPressed: _logout,
               icon: const Icon(Icons.logout, size: 14),
-              label: const Text('Выйти',
-                  style: TextStyle(fontSize: 12)),
+              label: const Text('Выйти', style: TextStyle(fontSize: 12)),
             ),
           ]),
         ),
-        // Табы
         Container(
           color: AppColors.panel,
           child: TabBar(
@@ -116,7 +112,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             ],
           ),
         ),
-        // Контент
         Expanded(
           child: TabBarView(
             controller: _tabController,
@@ -148,8 +143,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           padding: const EdgeInsets.all(24),
           decoration: _cardDeco,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.shield_outlined,
-                size: 42, color: AppColors.pur),
+            const Icon(Icons.shield_outlined, size: 42, color: AppColors.pur),
             const SizedBox(height: 14),
             const Text('Админ-панель',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
@@ -201,8 +195,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           keyboardType: TextInputType.number,
           obscureText: false,
           maxLength: 6,
-          decoration:
-              const InputDecoration(labelText: 'PIN', counterText: ''),
+          decoration: const InputDecoration(labelText: 'PIN', counterText: ''),
         ),
         actions: [
           TextButton(
@@ -258,8 +251,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             padding: const EdgeInsets.all(24),
             decoration: _cardDeco,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.info_outline,
-                  size: 42, color: AppColors.blu),
+              const Icon(Icons.info_outline, size: 42, color: AppColors.blu),
               const SizedBox(height: 14),
               Text('Доступ для $role',
                   style: const TextStyle(
@@ -267,8 +259,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
               const SizedBox(height: 8),
               Text(hint,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 12.5, color: AppColors.mut)),
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.mut)),
               const SizedBox(height: 18),
               TextButton(onPressed: _logout, child: const Text('Выйти')),
             ]),
@@ -276,7 +267,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         ),
       );
 
-  // ═══════════ super view (без шапки) ═══════════
+  // ═══════════ super view ═══════════
 
   Widget _superViewContent(AppDatabase db, Employee admin) {
     final unassigned = db.unassignedParks;
@@ -310,53 +301,49 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: AppColors.amb.withValues(alpha: 0.06),
-            border:
-                Border.all(color: AppColors.amb.withValues(alpha: 0.3)),
+            border: Border.all(color: AppColors.amb.withValues(alpha: 0.3)),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(children: [
-                  const Icon(Icons.link_off,
-                      size: 16, color: AppColors.amb),
-                  const SizedBox(width: 8),
-                  Text('Парки вне регионов · ${unassigned.length}',
-                      style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.amb2)),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              const Icon(Icons.link_off, size: 16, color: AppColors.amb),
+              const SizedBox(width: 8),
+              Text('Парки вне регионов · ${unassigned.length}',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.amb2)),
+            ]),
+            const SizedBox(height: 8),
+            ...unassigned.map((p) {
+              final loc = db.locById(p.locId);
+              final city = loc == null ? null : db.cityById(loc.cityId);
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(children: [
+                  Expanded(
+                    child: Text(
+                      '${city?.name ?? "—"} → ${loc?.name ?? "—"} → ${p.name}',
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _assignParkToRegion(db, p),
+                    child: const Text('В регион',
+                        style: TextStyle(fontSize: 12)),
+                  ),
                 ]),
-                const SizedBox(height: 8),
-                ...unassigned.map((p) {
-                  final loc = db.locById(p.locId);
-                  final city =
-                      loc == null ? null : db.cityById(loc.cityId);
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(children: [
-                      Expanded(
-                        child: Text(
-                          '${city?.name ?? "—"} → ${loc?.name ?? "—"} → ${p.name}',
-                          style: const TextStyle(fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => _assignParkToRegion(db, p),
-                        child: const Text('В регион',
-                            style: TextStyle(fontSize: 12)),
-                      ),
-                    ]),
-                  );
-                }),
-              ]),
+              );
+            }),
+          ]),
         ),
       ],
     ]);
   }
 
-  // ═══════════ regional view (без шапки) ═══════════
+  // ═══════════ regional view ═══════════
 
   Widget _regionalViewContent(AppDatabase db, Employee admin) {
     final region =
@@ -902,15 +889,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             Padding(
               padding: const EdgeInsets.only(left: 22, top: 2),
               child: Text(h.phone,
-                  style: const TextStyle(
-                      fontSize: 10.5, color: AppColors.dim)),
+                  style:
+                      const TextStyle(fontSize: 10.5, color: AppColors.dim)),
             ),
           Padding(
             padding: const EdgeInsets.only(left: 22, top: 2),
             child: Text(
               _formatPeriod(h.entry),
-              style: const TextStyle(
-                  fontSize: 10.5, color: AppColors.mut),
+              style: const TextStyle(fontSize: 10.5, color: AppColors.mut),
             ),
           ),
           if (h.entry.reason != null && h.entry.reason!.isNotEmpty)
@@ -982,8 +968,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                       child: InputDecorator(
                         decoration: const InputDecoration(
                           labelText: 'Дата открытия',
-                          suffixIcon:
-                              Icon(Icons.calendar_today, size: 16),
+                          suffixIcon: Icon(Icons.calendar_today, size: 16),
                         ),
                         child: Text(
                           openedAt == null
@@ -1065,8 +1050,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
           children: [
             Text(
                 '${a.name} будет снят с должности администратора этого парка.',
-                style:
-                    const TextStyle(fontSize: 13, color: AppColors.mut)),
+                style: const TextStyle(fontSize: 13, color: AppColors.mut)),
             const SizedBox(height: 8),
             const Text(
               'Он останется в системе как «свободный админ» и сможет быть назначен в другой парк. В истории парка сохранится запись.',
@@ -1100,6 +1084,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     a.regionId = null;
     a.status = EmployeeStatus.active;
     a.statusChangedAt = now;
+    // Снятый админ подчиняется super (или снимающему, если он super)
+    if (_currentAdmin != null) {
+      a.managerId = _currentAdmin!.id;
+    }
     db.save();
   }
 
@@ -1125,6 +1113,32 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     a.statusChangedAt = now;
     final loc = db.locById(park.locId);
     if (loc != null) a.lastCityId = loc.cityId;
+
+    // Автоподчинение: рег. админ региона парка или super
+    final regions = db.regionsOfPark(park.id);
+    if (regions.isNotEmpty) {
+      final regionAdmin = db.employees.firstWhere(
+        (x) =>
+            x.role == EmployeeRole.regionalAdmin &&
+            x.regionId == regions.first.id &&
+            x.status == EmployeeStatus.active,
+        orElse: () => Employee(id: '', name: ''),
+      );
+      if (regionAdmin.id.isNotEmpty) {
+        a.managerId = regionAdmin.id;
+      } else {
+        final superAdmin = db.superAdmins.isNotEmpty
+            ? db.superAdmins.first
+            : Employee(id: '', name: '');
+        if (superAdmin.id.isNotEmpty) a.managerId = superAdmin.id;
+      }
+    } else {
+      final superAdmin = db.superAdmins.isNotEmpty
+          ? db.superAdmins.first
+          : Employee(id: '', name: '');
+      if (superAdmin.id.isNotEmpty) a.managerId = superAdmin.id;
+    }
+
     db.save();
   }
 
@@ -1367,13 +1381,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
               else
                 DropdownButtonFormField<String>(
                   initialValue: locId,
-                  decoration:
-                      const InputDecoration(labelText: 'Локация'),
+                  decoration: const InputDecoration(labelText: 'Локация'),
                   isExpanded: true,
                   items: [
                     for (final l in currentLocs)
-                      DropdownMenuItem(
-                          value: l.id, child: Text(l.name)),
+                      DropdownMenuItem(value: l.id, child: Text(l.name)),
                   ],
                   onChanged: (v) => setS(() => locId = v),
                 ),
@@ -1573,8 +1585,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                                     Text(c.name,
                                         style: const TextStyle(
                                             fontSize: 13,
-                                            fontWeight:
-                                                FontWeight.w600)),
+                                            fontWeight: FontWeight.w600)),
                                     Text(
                                       'локаций: $locsCount · парков: $parksCount',
                                       style: const TextStyle(
@@ -1900,8 +1911,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             children: [
               Text(
                 'В базе уже есть город «${city.name}». Локаций: $locsCount, парков: $parksCount.',
-                style: const TextStyle(
-                    fontSize: 13, color: AppColors.mut),
+                style: const TextStyle(fontSize: 13, color: AppColors.mut),
               ),
               const SizedBox(height: 12),
               const Text(
@@ -1941,8 +1951,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             children: [
               Text(
                 'В этом городе уже есть локация «${loc.name}». Парков в ней: $parksCount.',
-                style: const TextStyle(
-                    fontSize: 13, color: AppColors.mut),
+                style: const TextStyle(fontSize: 13, color: AppColors.mut),
               ),
               const SizedBox(height: 12),
               Text(
@@ -1996,8 +2005,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                   TextSpan(
                     text: park.name,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.cyn),
+                        fontWeight: FontWeight.w700, color: AppColors.cyn),
                   ),
                   const TextSpan(text: '?'),
                 ],
@@ -2258,8 +2266,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                           constraints: const BoxConstraints(
                               minWidth: 30, minHeight: 30),
                           onPressed: () {
-                            db.employees
-                                .removeWhere((x) => x.id == a.id);
+                            db.employees.removeWhere((x) => x.id == a.id);
                             db.save();
                             Navigator.pop(ctx);
                           },
@@ -2358,6 +2365,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                             a.role = EmployeeRole.regionalAdmin;
                             a.regionId = region.id;
                             a.parkId = null;
+                            a.managerId = _currentAdmin?.id;
                             db.save();
                             Navigator.pop(ctx);
                             _snack('Назначен: ${a.name}');
@@ -2433,8 +2441,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                         TextButton(
                           onPressed: () => setS(() => showAll = true),
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 6),
                             minimumSize: const Size(0, 30),
                             tapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
@@ -2452,8 +2460,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                         TextButton(
                           onPressed: () => setS(() => showAll = false),
                           style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 6),
                             minimumSize: const Size(0, 30),
                             tapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
@@ -2471,12 +2479,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                     const SizedBox(height: 12),
                     Builder(builder: (ctx2) {
                       final candidates = db.employees.where((a) {
-                        if (a.status != EmployeeStatus.active) {
-                          return false;
-                        }
-                        if (a.role != EmployeeRole.parkAdmin) {
-                          return false;
-                        }
+                        if (a.status != EmployeeStatus.active) return false;
+                        if (a.role != EmployeeRole.parkAdmin) return false;
                         if (a.parkId == park.id) return false;
                         if (a.parkId == null) {
                           if (showAll) return true;
@@ -2538,8 +2542,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                                             : 'Сейчас: ${curPark.name} (${city?.name ?? "—"})',
                                         style: TextStyle(
                                             fontSize: 10.5,
-                                            color: !sameCity &&
-                                                    city != null
+                                            color: !sameCity && city != null
                                                 ? AppColors.cyn
                                                 : AppColors.dim),
                                       ),
@@ -2690,6 +2693,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       regionId: regionId,
       parkId: parkId,
       lastCityId: cityId,
+      managerId: _currentAdmin?.id,
       createdAt: now,
       history: [
         RoleHistoryEntry(
