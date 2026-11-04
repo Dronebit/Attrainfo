@@ -1,5 +1,9 @@
 import '../models/enums.dart';
 import '../models/models.dart';
+import '../models/operator.dart';
+import '../models/park_admin.dart';
+import '../models/operator_park_link.dart';
+
 
 Map<String, dynamic> buildSeed() {
   final now = DateTime.now();
@@ -76,5 +80,34 @@ Map<String, dynamic> buildSeed() {
       Incident(id: 'i13', rideId: 'r7', type: IncidentType.defect, severity: Severity.minor, status: IncidentStatus.inProgress, techId: 't3', ts: d(5), desc: 'Люфт поручня'),
       Incident(id: 'i14', rideId: 'r1', type: IncidentType.minor, severity: Severity.minor, status: IncidentStatus.isNew, techId: 't2', ts: h(12), desc: 'Кратковременная остановка привода'),
     ],
+
+'operators': [
+  Operator(id: 'op1', name: 'Алексей Смирнов', phone: '+7 900 555-11-22', pin: '1111'),
+  Operator(id: 'op2', name: 'Мария Орлова', phone: '+7 900 555-33-44', pin: '2222'),
+  Operator(id: 'op3', name: 'Денис Волков', phone: '+7 900 555-55-66', pin: '3333'),
+  Operator(id: 'op4', name: 'Ольга Никитина', phone: '+7 900 555-77-88', pin: '4444'),
+],
+'admins': [
+  ParkAdmin(id: 'adm1', name: 'Ирина Соколова', pin: '0000', parkId: 'p1'),
+  ParkAdmin(id: 'adm2', name: 'Олег Кузнецов', pin: '1000', parkId: 'p1'),
+  ParkAdmin(id: 'adm3', name: 'Елена Морозова', pin: '2000', parkId: 'p2'),
+],
+'operatorLinks': [
+  OperatorParkLink(id: 'lnk1', operatorId: 'op1', parkId: 'p1',
+      status: LinkStatus.approved, initiatorAdminId: 'adm1',
+      approverAdminId: 'adm2', approvedAt: DateTime.now()),
+  OperatorParkLink(id: 'lnk2', operatorId: 'op2', parkId: 'p1',
+      status: LinkStatus.approved, initiatorAdminId: 'adm1',
+      approverAdminId: 'adm2', approvedAt: DateTime.now()),
+  OperatorParkLink(id: 'lnk3', operatorId: 'op3', parkId: 'p2',
+      status: LinkStatus.approved, initiatorAdminId: 'adm3',
+      approvedAt: DateTime.now()),
+  OperatorParkLink(id: 'lnk4', operatorId: 'op4', parkId: 'p3',
+      status: LinkStatus.approved, approvedAt: DateTime.now()),
+],
+'vacancies': [],
+'applications': [],
+
+    
   };
 }
