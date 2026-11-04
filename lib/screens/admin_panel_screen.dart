@@ -996,9 +996,20 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('Снять с должности?'),
-        content: Text(
-            '${a.name} будет снят с должности администратора. В истории парка останется запись.',
-            style: const TextStyle(fontSize: 13, color: AppColors.mut)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                '${a.name} будет снят с должности администратора этого парка.',
+                style: const TextStyle(fontSize: 13, color: AppColors.mut)),
+            const SizedBox(height: 8),
+            const Text(
+              'Он останется в системе как «свободный админ» и сможет быть назначен в другой парк. В истории парка сохранится запись.',
+              style: TextStyle(fontSize: 12, color: AppColors.dim),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -1022,7 +1033,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       }
     }
     a.parkId = null;
-    a.status = EmployeeStatus.fired;
+    a.regionId = null;
+    a.status = EmployeeStatus.active;
     a.statusChangedAt = now;
     db.save();
   }
@@ -1047,6 +1059,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     a.regionId = null;
     a.status = EmployeeStatus.active;
     a.statusChangedAt = now;
+    final loc = db.locById(park.locId);
+    if (loc != null) a.lastCityId = loc.cityId;
     db.save();
   }
 
@@ -2376,7 +2390,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                         if (a.status != EmployeeStatus.active) return false;
                         if (a.role != EmployeeRole.parkAdmin) return false;
                         if (a.parkId == park.id) return false;
-                        if (a.parkId == null) return true;
+                        if (a.parkId == null) {
+                          if (showAll) return true;
+                          if (a.lastCityId == null) return true;
+                          return a.lastCityId == parkCityId;
+                        }
                         if (showAll) return true;
                         final city = db.cityOfAdmin(a);
                         return city?.id == parkCityId;
@@ -2560,6 +2578,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       return;
     }
     final now = DateTime.now();
+    String? cityId;
+    if (parkId != null) {
+      final park = db.parkById(parkId);
+      if (park != null) {
+        final loc = db.locById(park.locId);
+        cityId = loc?.cityId;
+      }
+    }
     db.employees.add(Employee(
       id: _uid(),
       name: name,
@@ -2568,6 +2594,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       role: isRegional ? EmployeeRole.regionalAdmin : EmployeeRole.parkAdmin,
       regionId: regionId,
       parkId: parkId,
+      lastCityId: cityId,
       createdAt: now,
       history: [
         RoleHistoryEntry(
