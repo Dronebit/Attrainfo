@@ -11,9 +11,9 @@ import '../models/region.dart';
 import 'seed.dart';
 
 class AppDatabase extends ChangeNotifier {
-  static const _key = 'attrakontrol-v7';
-  static const _oldKey = 'attrakontrol-v6';
-  static const _legacyKey = 'attrakontrol-v5';
+  static const _key = 'attrakontrol-v8';
+static const _oldKey = 'attrakontrol-v7';
+static const _legacyKey = 'attrakontrol-v6';
   static const masterPin = '9999';
 
   List<City> cities = [];
