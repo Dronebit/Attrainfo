@@ -692,7 +692,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   // ═══════════ создание — 5 сценариев ═══════════
 
-  /// 1. Парк в существующую локацию (в регионе)
   Future<void> _addParkToExistingLoc(AppDatabase db, Region region) async {
     final cities = db.citiesOfRegion(region.id);
     if (cities.isEmpty) {
@@ -794,7 +793,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     _snack('Парк «$name» создан');
   }
 
-  /// 2. Новая локация с парком в существующем (в регионе) городе
   Future<void> _addLocationWithPark(
       AppDatabase db, Region region) async {
     final cities = db.citiesOfRegion(region.id);
@@ -865,7 +863,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       return;
     }
 
-    // Проверка дубликата локации
     final existingLoc = db.locations.firstWhere(
       (l) =>
           l.cityId == cityId &&
@@ -874,7 +871,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
     ParkLocation loc;
     if (existingLoc.id.isNotEmpty) {
-      // Локация уже есть — предупреждаем и используем её
       if (!mounted) return;
       final useExisting = await _askUseExistingLocation(
           db, existingLoc, parkName);
@@ -893,14 +889,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     _snack('Парк «$parkName» создан');
   }
 
-  /// 3. Локация с парком в существующем городе (город может быть не в регионе)
   Future<void> _addToExistingCity(AppDatabase db, Region region) async {
     if (db.cities.isEmpty) {
       _snack('В базе нет городов');
       return;
     }
 
-    // Сначала — выбор города
     String? cityId;
     final citiesSorted = List<City>.from(db.cities)
       ..sort((a, b) => a.name.compareTo(b.name));
@@ -984,7 +978,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     if (pickedCity == null || !mounted) return;
     cityId = pickedCity.id;
 
-    // Теперь — создание локации и парка в этом городе
     final locCtrl = TextEditingController();
     final parkCtrl = TextEditingController();
 
@@ -1036,7 +1029,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       return;
     }
 
-    // Проверка дубликата локации
     final existingLoc = db.locations.firstWhere(
       (l) =>
           l.cityId == cityId &&
@@ -1063,7 +1055,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     _snack('Создано: ${pickedCity.name} → $locName → $parkName');
   }
 
-  /// 4. Новый город с локацией и парком (с проверкой дубликата имени)
   Future<void> _addNewCityWithChain(AppDatabase db, Region region) async {
     final cityCtrl = TextEditingController();
     final locCtrl = TextEditingController();
@@ -1130,7 +1121,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       return;
     }
 
-    // Проверка дубликата города
     final existingCity = db.cities.firstWhere(
       (c) => c.name.toLowerCase() == cityName.toLowerCase(),
       orElse: () => City(id: '', name: ''),
@@ -1142,14 +1132,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
           db, existingCity, locName, parkName);
       if (useExisting == null) return;
       if (useExisting == false) return;
-      // useExisting == true → используем существующий город
       city = existingCity;
     } else {
       city = City(id: _uid(), name: cityName);
       db.cities.add(city);
     }
 
-    // Проверка дубликата локации
     final existingLoc = db.locations.firstWhere(
       (l) =>
           l.cityId == city.id &&
@@ -1176,7 +1164,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     _snack('Создано: ${city.name} → ${loc.name} → $parkName');
   }
 
-  /// 5. Привязать существующий парк
   Future<void> _attachExistingPark(AppDatabase db, Region region) async {
     final candidates = db.parks
         .where((p) => !region.parkIds.contains(p.id))
@@ -1262,9 +1249,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   // ═══════════ confirm helpers ═══════════
 
-  /// Спрашивает: использовать существующий город? Возвращает true (использовать),
-  /// false (отмена), null (создать новый с другим именем — не поддерживается,
-  /// потому что имя уже занято).
   Future<bool?> _askUseExistingCity(AppDatabase db, City city,
       String locName, String parkName) async {
     final locsCount =
@@ -1309,7 +1293,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
   }
 
-  /// Спрашивает: использовать существующую локацию?
   Future<bool?> _askUseExistingLocation(AppDatabase db,
       ParkLocation loc, String parkName) async {
     final parksCount =
@@ -1344,6 +1327,65 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                 foregroundColor: const Color(0xFF1C1204)),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Использовать локацию'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Подтверждение назначения админа на парк
+  Future<bool?> _confirmAssignAdmin(ParkAdmin admin, Park park) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Подтвердить назначение?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            RichText(
+              text: TextSpan(
+                style: const TextStyle(
+                    fontSize: 13.5,
+                    color: AppColors.txt,
+                    height: 1.5),
+                children: [
+                  const TextSpan(text: 'Назначить '),
+                  TextSpan(
+                    text: admin.name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, color: AppColors.amb2),
+                  ),
+                  const TextSpan(text: ' администратором парка '),
+                  TextSpan(
+                    text: park.name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, color: AppColors.cyn),
+                  ),
+                  const TextSpan(text: '?'),
+                ],
+              ),
+            ),
+            if (admin.parkId != null) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Внимание: админ сейчас привязан к другому парку — он будет переназначен.',
+                style: TextStyle(fontSize: 11, color: AppColors.amb),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -1786,116 +1828,189 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Future<void> _assignAdminToPark(AppDatabase db, Park park) async {
     final parkLoc = db.locById(park.locId);
     final parkCityId = parkLoc?.cityId;
-
-    final candidates = db.admins.where((a) {
-      if (!a.active) return false;
-      if (a.role != AdminRole.parkAdmin) return false;
-      if (a.parkId == park.id) return false;
-      if (a.parkId == null) return true;
-      final city = db.cityOfAdmin(a);
-      return city?.id == parkCityId;
-    }).toList();
-
     final cityName = parkCityId == null
         ? '—'
         : (db.cityById(parkCityId)?.name ?? '—');
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        title: Text('Назначить админа · ${park.name}'),
-        content: SizedBox(
-          width: 440,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Город: $cityName. Показаны админы из этого города и свободные.',
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.dim),
-                ),
-                const SizedBox(height: 12),
-                if (candidates.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Text(
-                        'Нет подходящих админов. Создайте нового.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.dim)),
-                  )
-                else
-                  ...candidates.map((a) {
-                    final city = db.cityOfAdmin(a);
-                    final curPark = a.parkId == null
-                        ? null
-                        : db.parkById(a.parkId);
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.panel2,
-                        borderRadius: BorderRadius.circular(8),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          bool showAll = false;
+
+          return AlertDialog(
+            backgroundColor: AppColors.panel,
+            title: Text('Назначить админа · ${park.name}'),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(children: [
+                      Expanded(
+                        child: Text(
+                          showAll
+                              ? 'Показаны все админы (включая других городов).'
+                              : 'Город: $cityName. Показаны админы из этого города и свободные.',
+                          style: const TextStyle(
+                              fontSize: 11, color: AppColors.dim),
+                        ),
                       ),
-                      child: Row(children: [
-                        Expanded(
-                          child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                Text('${a.name} · PIN ${a.pin}',
-                                    style: const TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600)),
-                                Text(
-                                  curPark == null
-                                      ? 'Свободен · ${city?.name ?? "без города"}'
-                                      : 'Сейчас: ${curPark.name} (${city?.name ?? "—"})',
-                                  style: const TextStyle(
-                                      fontSize: 10.5,
-                                      color: AppColors.dim),
-                                ),
-                              ]),
-                        ),
+                      if (!showAll)
                         TextButton(
-                          onPressed: () {
-                            a.parkId = park.id;
-                            a.role = AdminRole.parkAdmin;
-                            a.regionId = null;
-                            db.save();
-                            Navigator.pop(ctx);
-                            _snack('Назначен: ${a.name}');
-                          },
-                          child: const Text('Выбрать',
-                              style: TextStyle(fontSize: 12)),
+                          onPressed: () => setS(() => showAll = true),
+                          style: TextButton.styleFrom(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 6),
+                            minimumSize: const Size(0, 30),
+                            tapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            'Искать в других городах',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.cyn,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      else
+                        TextButton(
+                          onPressed: () => setS(() => showAll = false),
+                          style: TextButton.styleFrom(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 6),
+                            minimumSize: const Size(0, 30),
+                            tapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            'Только мой город',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.mut,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ]),
-                    );
-                  }),
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.amb,
-                      foregroundColor: const Color(0xFF1C1204)),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _createAdmin(db, parkId: park.id);
-                  },
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Создать нового'),
+                    ]),
+                    const SizedBox(height: 12),
+                    Builder(builder: (ctx2) {
+                      final candidates = db.admins.where((a) {
+                        if (!a.active) return false;
+                        if (a.role != AdminRole.parkAdmin) return false;
+                        if (a.parkId == park.id) return false;
+                        if (a.parkId == null) return true;
+                        if (showAll) return true;
+                        final city = db.cityOfAdmin(a);
+                        return city?.id == parkCityId;
+                      }).toList();
+
+                      if (candidates.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: Text(
+                              'Нет подходящих админов. Создайте нового.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  fontSize: 12, color: AppColors.dim)),
+                        );
+                      }
+
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: candidates.map((a) {
+                          final city = db.cityOfAdmin(a);
+                          final curPark = a.parkId == null
+                              ? null
+                              : db.parkById(a.parkId);
+                          final sameCity = city?.id == parkCityId;
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.panel2,
+                              borderRadius: BorderRadius.circular(8),
+                              border: !sameCity && city != null
+                                  ? Border.all(
+                                      color: AppColors.cyn
+                                          .withValues(alpha: 0.3))
+                                  : null,
+                            ),
+                            child: Row(children: [
+                              Expanded(
+                                child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('${a.name} · PIN ${a.pin}',
+                                          style: const TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight:
+                                                  FontWeight.w600)),
+                                      Text(
+                                        curPark == null
+                                            ? 'Свободен · ${city?.name ?? "без города"}'
+                                            : 'Сейчас: ${curPark.name} (${city?.name ?? "—"})',
+                                        style: TextStyle(
+                                            fontSize: 10.5,
+                                            color: !sameCity && city != null
+                                                ? AppColors.cyn
+                                                : AppColors.dim),
+                                      ),
+                                    ]),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  final confirmed =
+                                      await _confirmAssignAdmin(a, park);
+                                  if (confirmed != true) return;
+                                  if (!ctx.mounted) return;
+
+                                  a.parkId = park.id;
+                                  a.role = AdminRole.parkAdmin;
+                                  a.regionId = null;
+                                  db.save();
+
+                                  Navigator.pop(ctx);
+                                  _snack('Назначен: ${a.name}');
+                                },
+                                child: const Text('Выбрать',
+                                    style: TextStyle(fontSize: 12)),
+                              ),
+                            ]),
+                          );
+                        }).toList(),
+                      );
+                    }),
+                    const SizedBox(height: 10),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.amb,
+                          foregroundColor: const Color(0xFF1C1204)),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _createAdmin(db, parkId: park.id);
+                      },
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Создать нового'),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Отмена')),
-        ],
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Отмена')),
+            ],
+          );
+        },
       ),
     );
     setState(() {});
