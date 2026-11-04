@@ -32,6 +32,40 @@ extension EmployeeRoleX on EmployeeRole {
       this == EmployeeRole.parkAdmin ||
       this == EmployeeRole.operator ||
       this == EmployeeRole.technician;
+
+  /// Уровень в иерархии (чем больше, тем выше)
+  int get level => const {
+        EmployeeRole.superAdmin: 5,
+        EmployeeRole.regionalAdmin: 4,
+        EmployeeRole.parkAdmin: 3,
+        EmployeeRole.operator: 2,
+        EmployeeRole.technician: 2,
+      }[this]!;
+
+  /// Кем может руководить эта роль (сверху вниз)
+  List<EmployeeRole> get canManageRoles => const {
+        EmployeeRole.superAdmin: [
+          EmployeeRole.regionalAdmin,
+          EmployeeRole.parkAdmin,
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+        EmployeeRole.regionalAdmin: [
+          EmployeeRole.parkAdmin,
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+        EmployeeRole.parkAdmin: [
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+        EmployeeRole.operator: [],
+        EmployeeRole.technician: [],
+      }[this]!;
+
+  /// Кем может быть руководитель этой роли
+  List<EmployeeRole> get allowedManagerRoles =>
+      EmployeeRole.values.where((r) => r.canManageRoles.contains(this)).toList();
 }
 
 enum EmployeeStatus { active, vacation, sick, blocked, fired }
@@ -124,6 +158,9 @@ class Employee {
 
   String? lastCityId;
 
+  /// Кто непосредственный руководитель (Employee.id)
+  String? managerId;
+
   DateTime createdAt;
   DateTime? statusChangedAt;
   String? statusNote;
@@ -142,6 +179,7 @@ class Employee {
     this.jobTitle,
     this.address,
     this.lastCityId,
+    this.managerId,
     DateTime? createdAt,
     this.statusChangedAt,
     this.statusNote,
@@ -165,6 +203,7 @@ class Employee {
         'jobTitle': jobTitle,
         'address': address,
         'lastCityId': lastCityId,
+        'managerId': managerId,
         'createdAt': createdAt.toIso8601String(),
         'statusChangedAt': statusChangedAt?.toIso8601String(),
         'statusNote': statusNote,
@@ -190,6 +229,7 @@ class Employee {
         jobTitle: j['jobTitle'],
         address: j['address'],
         lastCityId: j['lastCityId'],
+        managerId: j['managerId'],
         createdAt: j['createdAt'] != null
             ? DateTime.parse(j['createdAt'])
             : DateTime.now(),
