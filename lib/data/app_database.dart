@@ -400,6 +400,142 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
+  // ═══════════ назначение / снятие админа парка ═══════════
+
+  /// Назначает сотрудника администратором парка.
+  ///
+  /// Закрывает текущую запись в истории, создаёт новую (parkAdmin → park),
+  /// выставляет рег. админа/super как руководителя и подчиняет
+  /// новому админу всех операторов и техников парка.
+  void assignAdminToPark(Employee admin, Park park, {String? reason}) {
+    final now = DateTime.now();
+
+    _closeCurrentHistory(admin, reason ?? 'Назначен администратором');
+
+    admin.history.add(RoleHistoryEntry(
+      id: 'h${DateTime.now().microsecondsSinceEpoch}',
+      role: EmployeeRole.parkAdmin,
+      parkId: park.id,
+      startedAt: now,
+    ));
+
+    admin.role = EmployeeRole.parkAdmin;
+    admin.parkId = park.id;
+    admin.regionId = null;
+    admin.status = EmployeeStatus.active;
+    admin.statusChangedAt = now;
+
+    final loc = locById(park.locId);
+    if (loc != null) admin.lastCityId = loc.cityId;
+
+    _autoAssignManager(admin, park);
+    _subordinateParkStaffTo(admin, park);
+
+    save();
+  }
+
+  /// Снимает админа с должности.
+  ///
+  /// Освобождает parkId/regionId, чистит его из additionalManagerIds
+  /// у всех сотрудников. Если [byAdminId] передан — ставит его
+  /// как основного руководителя снятого.
+  void removeAdminFromPark(Employee admin, {String? byAdminId}) {
+    final now = DateTime.now();
+    final removedParkId = admin.parkId;
+
+    _closeCurrentHistory(admin, 'Снят с должности');
+
+    admin.parkId = null;
+    admin.regionId = null;
+    admin.status = EmployeeStatus.active;
+    admin.statusChangedAt = now;
+
+    if (byAdminId != null) {
+      admin.managerId = byAdminId;
+    }
+
+    if (removedParkId != null) {
+      for (final e in employees) {
+        if (e.additionalManagerIds.contains(admin.id)) {
+          e.additionalManagerIds.remove(admin.id);
+        }
+      }
+    }
+
+    save();
+  }
+
+  /// Закрывает текущую открытую запись в истории сотрудника.
+  void _closeCurrentHistory(Employee e, String reason) {
+    final now = DateTime.now();
+    for (final h in e.history) {
+      if (h.isCurrent) {
+        h.endedAt = now;
+        h.reason = reason;
+      }
+    }
+  }
+
+  /// Ставит админу руководителя: рег. админ региона парка или super.
+  void _autoAssignManager(Employee admin, Park park) {
+    final regs = regionsOfPark(park.id);
+    if (regs.isNotEmpty) {
+      final regionAdmin = employees.firstWhereOrNull((x) =>
+          x.role == EmployeeRole.regionalAdmin &&
+          x.regionId == regs.first.id &&
+          x.status == EmployeeStatus.active);
+      if (regionAdmin != null) {
+        admin.managerId = regionAdmin.id;
+        return;
+      }
+    }
+    final superAdmin = superAdmins.isNotEmpty ? superAdmins.first : null;
+    if (superAdmin != null) {
+      admin.managerId = superAdmin.id;
+    }
+  }
+
+  /// Подчиняет операторов и техников парка админу.
+  ///
+  /// Если у сотрудника уже есть активный основной руководитель —
+  /// админ уходит в `additionalManagerIds`.
+  void _subordinateParkStaffTo(Employee admin, Park park) {
+    bool needsAdditional(Employee e) {
+      if (e.managerId == null) return false;
+      if (e.managerId == admin.id) return false;
+      final cur = employeeById(e.managerId);
+      return cur != null && cur.status != EmployeeStatus.fired;
+    }
+
+    void addManager(Employee e) {
+      if (e.id == admin.id) return;
+      if (e.managerId == admin.id) return;
+      if (e.additionalManagerIds.contains(admin.id)) return;
+      if (needsAdditional(e)) {
+        e.additionalManagerIds.add(admin.id);
+      } else {
+        e.managerId = admin.id;
+        e.additionalManagerIds.remove(admin.id);
+      }
+    }
+
+    for (final link in operatorLinks) {
+      if (link.parkId == park.id && link.status == LinkStatus.approved) {
+        final op = employeeById(link.operatorId);
+        if (op != null && op.status != EmployeeStatus.fired) {
+          addManager(op);
+        }
+      }
+    }
+
+    for (final e in employees) {
+      if (e.status == EmployeeStatus.fired) continue;
+      if (e.hasRole(EmployeeRole.technician) && e.parkId == park.id) {
+        addManager(e);
+      }
+    }
+  }
+
   // ═══════════ связи оператор ↔ парк ═══════════
 
   List<OperatorParkLink> linksForOperator(String opId) =>
