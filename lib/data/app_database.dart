@@ -8,12 +8,14 @@ import '../models/park_admin.dart';
 import '../models/operator_park_link.dart';
 import '../models/shift_vacancy.dart';
 import '../models/shift.dart';
+import '../models/region.dart';
 import 'seed.dart';
 
 class AppDatabase extends ChangeNotifier {
-  static const _key = 'attrakontrol-v4';
+  static const _key = 'attrakontrol-v5';
   static const masterPin = '9999';
 
+  // базовые справочники
   List<City> cities = [];
   List<ParkLocation> locations = [];
   List<Park> parks = [];
@@ -21,17 +23,25 @@ class AppDatabase extends ChangeNotifier {
   List<Technician> techs = [];
   List<Downtime> downtimes = [];
   List<Incident> incidents = [];
+
+  // сотрудники
   List<Operator> operators = [];
   List<ParkAdmin> admins = [];
   List<OperatorParkLink> operatorLinks = [];
+
+  // смены
   List<ShiftVacancy> vacancies = [];
   List<VacancyApplication> applications = [];
 
+  // регионы
+  List<Region> regions = [];
+
+  // текущее состояние приложения
   Shift? activeShift;
   bool opSelectingRides = false;
   String? currentParkId;
 
-  // ─── базовые геттеры ───
+  // ═══════════════ базовые геттеры ═══════════════
   City? cityById(String? id) => cities.firstWhereOrNull((c) => c.id == id);
   ParkLocation? locById(String? id) =>
       locations.firstWhereOrNull((l) => l.id == id);
@@ -49,17 +59,18 @@ class AppDatabase extends ChangeNotifier {
       vacancies.firstWhereOrNull((v) => v.id == id);
   VacancyApplication? applicationById(String? id) =>
       applications.firstWhereOrNull((a) => a.id == id);
+  Region? regionById(String? id) =>
+      regions.firstWhereOrNull((r) => r.id == id);
+
+  ParkAdmin? adminByPin(String? pin) {
+    if (pin == null || pin.isEmpty) return null;
+    return admins.firstWhereOrNull((a) => a.active && a.pin == pin);
+  }
 
   String cityOfPark(Park p) {
     final l = locById(p.locId);
     final c = l == null ? null : cityById(l.cityId);
     return c?.name ?? '—';
-  }
-
-  String? cityIdOfPark(Park? p) {
-    if (p == null) return null;
-    final l = locById(p.locId);
-    return l?.cityId;
   }
 
   String ridePath(String rideId) {
@@ -71,7 +82,165 @@ class AppDatabase extends ChangeNotifier {
     return [c?.name, l?.name, p?.name].where((x) => x != null).join(' · ');
   }
 
-  // ─── связи оператор ↔ парк ───
+  // ═══════════════ регионы ═══════════════
+
+  /// Все парки региона
+  List<Park> parksOfRegion(String regId) {
+    final region = regionById(regId);
+    if (region == null) return [];
+    return region.parkIds
+        .map(parkById)
+        .whereType<Park>()
+        .toList();
+  }
+
+  /// В каких регионах парк (обычно 0 или 1)
+  List<Region> regionsOfPark(String parkId) =>
+      regions.where((r) => r.parkIds.contains(parkId)).toList();
+
+  /// Парки, не привязанные ни к одному региону
+  List<Park> get unassignedParks {
+    final assigned = <String>{};
+    for (final r in regions) {
+      assigned.addAll(r.parkIds);
+    }
+    return parks.where((p) => !assigned.contains(p.id)).toList();
+  }
+
+  /// Уникальные города региона (вычисляемые)
+  List<City> citiesOfRegion(String regId) {
+    final region = regionById(regId);
+    if (region == null) return [];
+    final cityIds = <String>{};
+    for (final parkId in region.parkIds) {
+      final park = parkById(parkId);
+      if (park == null) continue;
+      final loc = locById(park.locId);
+      if (loc == null) continue;
+      cityIds.add(loc.cityId);
+    }
+    return cityIds
+        .map(cityById)
+        .whereType<City>()
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  /// Иерархия региона: City → Location → List<Park>
+  /// Именно эта структура рендерится в super-панели.
+  Map<City, Map<ParkLocation, List<Park>>> parksOfRegionHierarchy(
+      String regId) {
+    final region = regionById(regId);
+    if (region == null) return {};
+    final result = <City, Map<ParkLocation, List<Park>>>{};
+
+    for (final parkId in region.parkIds) {
+      final park = parkById(parkId);
+      if (park == null) continue;
+      final loc = locById(park.locId);
+      if (loc == null) continue;
+      final city = cityById(loc.cityId);
+      if (city == null) continue;
+
+      result.putIfAbsent(city, () => {});
+      result[city]!.putIfAbsent(loc, () => []);
+      result[city]![loc]!.add(park);
+    }
+    return result;
+  }
+
+  /// Регионы, где этот админ — региональный
+  List<Region> regionsOfAdmin(String adminId) {
+    final admin = adminById(adminId);
+    if (admin == null) return [];
+    if (admin.role != AdminRole.regionalAdmin) return [];
+    if (admin.regionId == null) return [];
+    final r = regionById(admin.regionId);
+    return r == null ? [] : [r];
+  }
+
+  /// Региональные админы региона
+  List<ParkAdmin> regionalAdminsOf(String regId) => admins
+      .where((a) =>
+          a.active &&
+          a.role == AdminRole.regionalAdmin &&
+          a.regionId == regId)
+      .toList();
+
+  /// Админы парка
+  List<ParkAdmin> parkAdminsOf(String parkId) => admins
+      .where((a) =>
+          a.active && a.role == AdminRole.parkAdmin && a.parkId == parkId)
+      .toList();
+
+  /// Все супер-админы
+  List<ParkAdmin> get superAdmins =>
+      admins.where((a) => a.active && a.role == AdminRole.superAdmin).toList();
+
+  // ═══════════════ регионы CRUD ═══════════════
+
+  Region createRegion(String name, {List<String>? parkIds}) {
+    final region = Region(
+      id: 'reg${DateTime.now().microsecondsSinceEpoch}',
+      name: name,
+      parkIds: parkIds ?? [],
+    );
+    // Убираем парки из других регионов
+    for (final pid in region.parkIds) {
+      _detachParkFromOtherRegions(pid, region.id);
+    }
+    regions.add(region);
+    save();
+    return region;
+  }
+
+  void updateRegion(String regId, String name, List<String> parkIds) {
+    final region = regionById(regId);
+    if (region == null) return;
+    region.name = name;
+    // Убираем парки из других регионов
+    for (final pid in parkIds) {
+      _detachParkFromOtherRegions(pid, regId);
+    }
+    region.parkIds = List.from(parkIds);
+    save();
+  }
+
+  void deleteRegion(String regId) {
+    regions.removeWhere((r) => r.id == regId);
+    // Отвязываем региональных админов
+    for (final a in admins.where((a) => a.regionId == regId)) {
+      a.active = false;
+    }
+    save();
+  }
+
+  void _detachParkFromOtherRegions(String parkId, String exceptRegId) {
+    for (final r in regions) {
+      if (r.id == exceptRegId) continue;
+      r.parkIds.remove(parkId);
+    }
+  }
+
+  void addParkToRegion(String regId, String parkId) {
+    final region = regionById(regId);
+    if (region == null) return;
+    _detachParkFromOtherRegions(parkId, regId);
+    if (!region.parkIds.contains(parkId)) {
+      region.parkIds.add(parkId);
+      save();
+    }
+  }
+
+  void removeParkFromRegion(String regId, String parkId) {
+    final region = regionById(regId);
+    if (region == null) return;
+    region.parkIds.remove(parkId);
+    save();
+  }
+
+  // ═══════════════ связи оператор ↔ парк ═══════════════
+
   List<OperatorParkLink> linksForOperator(String opId) =>
       operatorLinks.where((l) => l.operatorId == opId).toList();
 
@@ -80,10 +249,11 @@ class AppDatabase extends ChangeNotifier {
       .map((l) => l.parkId)
       .toList();
 
-  List<Park> approvedParksForOperator(String opId) => approvedParkIdsForOperator(opId)
-      .map(parkById)
-      .whereType<Park>()
-      .toList();
+  List<Park> approvedParksForOperator(String opId) =>
+      approvedParkIdsForOperator(opId)
+          .map(parkById)
+          .whereType<Park>()
+          .toList();
 
   List<OperatorParkLink> pendingLinksForPark(String parkId) => operatorLinks
       .where((l) => l.parkId == parkId && l.status == LinkStatus.pending)
@@ -95,15 +265,12 @@ class AppDatabase extends ChangeNotifier {
       .whereType<Operator>()
       .toList();
 
-  /// Создать запрос на привязку. Если оператор уже привязан к другому парку —
-  /// нужен второй подтверждающий админ.
   void createLinkRequest(
     String operatorId,
     String parkId, {
     String? initiatorAdminId,
     String? note,
   }) {
-    // Уже есть pending или approved?
     final existing = operatorLinks.firstWhereOrNull((l) =>
         l.operatorId == operatorId &&
         l.parkId == parkId &&
@@ -120,8 +287,6 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  /// Одобрить привязку. Если у оператора уже есть approved в этом парке —
-  /// не дублируем.
   void approveLink(String linkId, String approverAdminId) {
     final l = operatorLinks.firstWhereOrNull((x) => x.id == linkId);
     if (l == null) return;
@@ -144,27 +309,33 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  // ─── вакансии ───
+  // ═══════════════ вакансии ═══════════════
+
   List<ShiftVacancy> vacanciesForPark(String parkId) => vacancies
       .where((v) => v.parkId == parkId)
       .toList()
     ..sort((a, b) => a.date.compareTo(b.date));
 
-  /// Открытые вакансии, видимые оператору (в городах его привязанных парков)
   List<ShiftVacancy> openVacanciesForOperator(String opId) {
     final myParks = approvedParksForOperator(opId);
     final myCityIds = myParks
-        .map((p) => cityIdOfPark(p))
+        .map((p) {
+          final l = locById(p.locId);
+          return l?.cityId;
+        })
         .whereType<String>()
         .toSet();
     return vacancies.where((v) {
       if (v.status != VacancyStatus.open) return false;
-      if (!v.date.isAfter(DateTime.now().subtract(const Duration(days: 1)))) {
-        return false; // прошедшие
+      if (!v.date.isAfter(
+          DateTime.now().subtract(const Duration(days: 1)))) {
+        return false;
       }
       final p = parkById(v.parkId);
-      final cid = cityIdOfPark(p);
-      return cid != null && myCityIds.contains(cid);
+      if (p == null) return false;
+      final l = locById(p.locId);
+      if (l == null) return false;
+      return myCityIds.contains(l.cityId);
     }).toList()
       ..sort((a, b) => a.date.compareTo(b.date));
   }
@@ -172,16 +343,14 @@ class AppDatabase extends ChangeNotifier {
   List<VacancyApplication> applicationsForVacancy(String vacancyId) =>
       applications.where((a) => a.vacancyId == vacancyId).toList();
 
-  List<VacancyApplication> applicationsForOperator(String opId) => applications
-      .where((a) => a.operatorId == opId)
-      .toList()
-    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  List<VacancyApplication> applicationsForOperator(String opId) =>
+      applications.where((a) => a.operatorId == opId).toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   bool canOperatorApply(String opId, String vacancyId) {
     final v = vacancyById(vacancyId);
     if (v == null || v.status != VacancyStatus.open) return false;
 
-    // Уже подал?
     final already = applications.firstWhereOrNull((a) =>
         a.vacancyId == vacancyId &&
         a.operatorId == opId &&
@@ -189,7 +358,6 @@ class AppDatabase extends ChangeNotifier {
             a.status == ApplicationStatus.approved));
     if (already != null) return false;
 
-    // Есть другая approved-заявка на этот же день?
     final conflict = applications.any((a) {
       if (a.operatorId != opId) return false;
       if (a.status != ApplicationStatus.approved) return false;
@@ -212,7 +380,6 @@ class AppDatabase extends ChangeNotifier {
     final v = vacancyById(vacancyId);
     if (v == null) return;
     v.status = VacancyStatus.cancelled;
-    // Отменяем pending-заявки
     for (final a in applications.where((x) =>
         x.vacancyId == vacancyId && x.status == ApplicationStatus.pending)) {
       a.status = ApplicationStatus.cancelled;
@@ -237,12 +404,12 @@ class AppDatabase extends ChangeNotifier {
     a.decidedByAdminId = adminId;
     a.decidedAt = DateTime.now();
 
-    // Если набрали needCount — закрываем вакансию
     final v = vacancyById(a.vacancyId);
     if (v != null) {
       final approved = applications
           .where((x) =>
-              x.vacancyId == v.id && x.status == ApplicationStatus.approved)
+              x.vacancyId == v.id &&
+              x.status == ApplicationStatus.approved)
           .length;
       if (approved >= v.needCount) {
         v.status = VacancyStatus.filled;
@@ -260,7 +427,8 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  // ─── смена (реальная, по факту) ───
+  // ═══════════════ смена (реальная) ═══════════════
+
   void startShift(String parkId, {String? operatorId, String? vacancyId}) {
     activeShift = Shift(
       parkId: parkId,
@@ -295,7 +463,8 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  // ─── аналитика ───
+  // ═══════════════ аналитика ═══════════════
+
   List<({String rideId, double total, Map<DowntimeReason, double> byReason})>
       downtimeByRide(int periodDays) {
     final now = DateTime.now();
@@ -320,7 +489,8 @@ class AppDatabase extends ChangeNotifier {
       ..sort((a, b) => b.total.compareTo(a.total));
   }
 
-  // ─── save/load ───
+  // ═══════════════ save / load ═══════════════
+
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -338,6 +508,7 @@ class AppDatabase extends ChangeNotifier {
           'operatorLinks': operatorLinks.map((e) => e.toJson()).toList(),
           'vacancies': vacancies.map((e) => e.toJson()).toList(),
           'applications': applications.map((e) => e.toJson()).toList(),
+          'regions': regions.map((e) => e.toJson()).toList(),
           'activeShift': activeShift?.toJson(),
           'opSelectingRides': opSelectingRides,
           'currentParkId': currentParkId,
@@ -356,9 +527,7 @@ class AppDatabase extends ChangeNotifier {
     }
     json ??= _seedJson();
     _apply(json);
-    if (operators.isEmpty) {
-      _apply(_seedJson());
-    }
+    if (operators.isEmpty) _apply(_seedJson());
     if (admins.isEmpty) {
       admins.add(ParkAdmin(
         id: 'adm-default',
@@ -381,20 +550,25 @@ class AppDatabase extends ChangeNotifier {
     final s = buildSeed();
     return {
       'cities': _safeList(s['cities'], (e) => (e as City).toJson()),
-      'locations': _safeList(s['locations'], (e) => (e as ParkLocation).toJson()),
+      'locations':
+          _safeList(s['locations'], (e) => (e as ParkLocation).toJson()),
       'parks': _safeList(s['parks'], (e) => (e as Park).toJson()),
       'rides': _safeList(s['rides'], (e) => (e as Ride).toJson()),
       'techs': _safeList(s['techs'], (e) => (e as Technician).toJson()),
-      'downtimes': _safeList(s['downtimes'], (e) => (e as Downtime).toJson()),
-      'incidents': _safeList(s['incidents'], (e) => (e as Incident).toJson()),
-      'operators': _safeList(s['operators'], (e) => (e as Operator).toJson()),
+      'downtimes':
+          _safeList(s['downtimes'], (e) => (e as Downtime).toJson()),
+      'incidents':
+          _safeList(s['incidents'], (e) => (e as Incident).toJson()),
+      'operators':
+          _safeList(s['operators'], (e) => (e as Operator).toJson()),
       'admins': _safeList(s['admins'], (e) => (e as ParkAdmin).toJson()),
-      'operatorLinks': _safeList(s['operatorLinks'],
-          (e) => (e as OperatorParkLink).toJson()),
-      'vacancies': _safeList(
-          s['vacancies'], (e) => (e as ShiftVacancy).toJson()),
+      'operatorLinks': _safeList(
+          s['operatorLinks'], (e) => (e as OperatorParkLink).toJson()),
+      'vacancies':
+          _safeList(s['vacancies'], (e) => (e as ShiftVacancy).toJson()),
       'applications': _safeList(
           s['applications'], (e) => (e as VacancyApplication).toJson()),
+      'regions': _safeList(s['regions'], (e) => (e as Region).toJson()),
     };
   }
 
@@ -407,15 +581,19 @@ class AppDatabase extends ChangeNotifier {
   }
 
   void _apply(Map<String, dynamic> j) {
-    cities = (j['cities'] as List?)?.map((e) => City.fromJson(e)).toList() ?? [];
+    cities =
+        (j['cities'] as List?)?.map((e) => City.fromJson(e)).toList() ?? [];
     locations = (j['locations'] as List?)
             ?.map((e) => ParkLocation.fromJson(e))
             .toList() ??
         [];
-    parks = (j['parks'] as List?)?.map((e) => Park.fromJson(e)).toList() ?? [];
-    rides = (j['rides'] as List?)?.map((e) => Ride.fromJson(e)).toList() ?? [];
+    parks =
+        (j['parks'] as List?)?.map((e) => Park.fromJson(e)).toList() ?? [];
+    rides =
+        (j['rides'] as List?)?.map((e) => Ride.fromJson(e)).toList() ?? [];
     techs =
-        (j['techs'] as List?)?.map((e) => Technician.fromJson(e)).toList() ?? [];
+        (j['techs'] as List?)?.map((e) => Technician.fromJson(e)).toList() ??
+            [];
     downtimes = (j['downtimes'] as List?)
             ?.map((e) => Downtime.fromJson(e))
             .toList() ??
@@ -429,7 +607,8 @@ class AppDatabase extends ChangeNotifier {
             .toList() ??
         [];
     admins =
-        (j['admins'] as List?)?.map((e) => ParkAdmin.fromJson(e)).toList() ?? [];
+        (j['admins'] as List?)?.map((e) => ParkAdmin.fromJson(e)).toList() ??
+            [];
     operatorLinks = (j['operatorLinks'] as List?)
             ?.map((e) => OperatorParkLink.fromJson(e))
             .toList() ??
@@ -442,6 +621,9 @@ class AppDatabase extends ChangeNotifier {
             ?.map((e) => VacancyApplication.fromJson(e))
             .toList() ??
         [];
+    regions =
+        (j['regions'] as List?)?.map((e) => Region.fromJson(e)).toList() ??
+            [];
     final sh = j['activeShift'];
     activeShift = sh is Map<String, dynamic> ? Shift.fromJson(sh) : null;
     opSelectingRides = j['opSelectingRides'] ?? false;
