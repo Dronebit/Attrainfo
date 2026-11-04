@@ -94,6 +94,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     final ctrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('PIN администратора'),
@@ -507,215 +508,219 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   Future<void> _showParkCard(
       AppDatabase db, Employee admin, Park park) async {
-    final admins = db.parkAdminsOf(park.id);
-    final rides = db.rides.where((r) => r.parkId == park.id).toList();
-    final activeRides =
-        rides.where((r) => r.status == RideStatus.active).length;
-    final downtimeRides =
-        rides.where((r) => r.status == RideStatus.downtime).length;
-    final operatorsCount = db.operatorsOfPark(park.id).length;
-
-    final incidentIds = rides.map((r) => r.id).toSet();
-    final openIncidents = db.incidents
-        .where((i) =>
-            incidentIds.contains(i.rideId) &&
-            i.status != IncidentStatus.resolved)
-        .length;
-    final activeDowntimes = db.downtimes
-        .where((d) =>
-            incidentIds.contains(d.rideId) &&
-            d.end == null &&
-            d.reason != DowntimeReason.retired)
-        .length;
-
-    final history = <_ParkHistoryEntry>[];
-    for (final e in db.employees) {
-      for (final h in e.history) {
-        if (h.parkId == park.id) {
-          history.add(_ParkHistoryEntry(
-            employeeName: e.name,
-            phone: e.phone,
-            entry: h,
-          ));
-        }
-      }
-    }
-    history.sort((a, b) {
-      if (a.entry.isCurrent != b.entry.isCurrent) {
-        return a.entry.isCurrent ? -1 : 1;
-      }
-      return b.entry.startedAt.compareTo(a.entry.startedAt);
-    });
-
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-        contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-        title: Row(children: [
-          const Icon(Icons.attractions, size: 20, color: AppColors.amb),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(park.name,
-                    style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text(
-                  _parkLocationPath(db, park),
-                  style: const TextStyle(
-                      fontSize: 11.5, color: AppColors.dim),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 18),
-            tooltip: 'Редактировать парк',
-            color: AppColors.mut,
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await _editPark(db, park);
-              if (!mounted) return;
-              _showParkCard(db, admin, park);
-            },
-          ),
-        ]),
-        content: SizedBox(
-          width: 480,
-          child: SingleChildScrollView(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _parkInfoBlock(park),
-                  const SizedBox(height: 14),
-                  const _SectionTitle('СТАТИСТИКА'),
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    Expanded(
-                        child: _statBox(
-                            '${rides.length}', 'аттракционов', AppColors.amb)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                        child: _statBox('$activeRides', 'в работе',
-                            AppColors.grn)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                        child: _statBox('$downtimeRides', 'в простое',
-                            AppColors.org)),
-                  ]),
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    Expanded(
-                        child: _statBox(
-                            '$operatorsCount', 'операторов', AppColors.cyn)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                        child: _statBox(
-                            '$openIncidents', 'инцидентов', AppColors.red)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                        child: _statBox('$activeDowntimes', 'простоев',
-                            AppColors.pur)),
-                  ]),
-                  const SizedBox(height: 14),
-                  const _SectionTitle('АДМИНИСТРАТОРЫ'),
-                  const SizedBox(height: 6),
-                  if (admins.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text('Нет активных администраторов',
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.dim)),
-                    )
-                  else
-                    ...admins.map((a) => Container(
-                          margin: const EdgeInsets.only(bottom: 6),
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.panel2,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(children: [
-                            const Icon(Icons.person,
-                                size: 16, color: AppColors.grn),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                        '${a.name} · PIN ${a.pin}',
-                                        style: const TextStyle(
-                                            fontSize: 12.5,
-                                            fontWeight:
-                                                FontWeight.w600)),
-                                    if (a.phone.isNotEmpty)
-                                      Text(a.phone,
-                                          style: const TextStyle(
-                                              fontSize: 10.5,
-                                              color: AppColors.dim)),
-                                  ]),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.person_remove,
-                                  size: 16),
-                              color: AppColors.red,
-                              tooltip: 'Снять с должности',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                  minWidth: 30, minHeight: 30),
-                              onPressed: () async {
-                                final ok = await _confirmRemoveAdmin(a);
-                                if (ok != true) return;
-                                _doRemoveFromPark(db, a);
-                                if (!ctx.mounted) return;
-                                Navigator.pop(ctx);
-                                if (!mounted) return;
-                                _showParkCard(db, admin, park);
-                              },
-                            ),
-                          ]),
-                        )),
-                  const SizedBox(height: 6),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await _assignAdminToPark(db, park);
-                      if (!mounted) return;
-                      _showParkCard(db, admin, park);
-                    },
-                    icon: const Icon(Icons.person_add, size: 16),
-                    label: const Text('Назначить админа'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.amb,
-                      side: const BorderSide(color: AppColors.amb),
+      useRootNavigator: true,
+      barrierDismissible: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          final admins = db.parkAdminsOf(park.id);
+          final rides = db.rides.where((r) => r.parkId == park.id).toList();
+          final activeRides =
+              rides.where((r) => r.status == RideStatus.active).length;
+          final downtimeRides =
+              rides.where((r) => r.status == RideStatus.downtime).length;
+          final operatorsCount = db.operatorsOfPark(park.id).length;
+
+          final incidentIds = rides.map((r) => r.id).toSet();
+          final openIncidents = db.incidents
+              .where((i) =>
+                  incidentIds.contains(i.rideId) &&
+                  i.status != IncidentStatus.resolved)
+              .length;
+          final activeDowntimes = db.downtimes
+              .where((d) =>
+                  incidentIds.contains(d.rideId) &&
+                  d.end == null &&
+                  d.reason != DowntimeReason.retired)
+              .length;
+
+          final history = <_ParkHistoryEntry>[];
+          for (final e in db.employees) {
+            for (final h in e.history) {
+              if (h.parkId == park.id) {
+                history.add(_ParkHistoryEntry(
+                  employeeName: e.name,
+                  phone: e.phone,
+                  entry: h,
+                ));
+              }
+            }
+          }
+          history.sort((a, b) {
+            if (a.entry.isCurrent != b.entry.isCurrent) {
+              return a.entry.isCurrent ? -1 : 1;
+            }
+            return b.entry.startedAt.compareTo(a.entry.startedAt);
+          });
+
+          return AlertDialog(
+            backgroundColor: AppColors.panel,
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+            title: Row(children: [
+              const Icon(Icons.attractions, size: 20, color: AppColors.amb),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(park.name,
+                        style: const TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(
+                      _parkLocationPath(db, park),
+                      style: const TextStyle(
+                          fontSize: 11.5, color: AppColors.dim),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  const _SectionTitle('ИСТОРИЯ АДМИНИСТРАТОРОВ'),
-                  const SizedBox(height: 6),
-                  if (history.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text('История пуста',
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.dim)),
-                    )
-                  else
-                    ...history.map((h) => _historyRow(h)),
-                ]),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Закрыть')),
-        ],
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                tooltip: 'Редактировать парк',
+                color: AppColors.mut,
+                onPressed: () async {
+                  await _editPark(db, park);
+                  if (!ctx.mounted) return;
+                  setS(() {});
+                },
+              ),
+            ]),
+            content: SizedBox(
+              width: 480,
+              child: SingleChildScrollView(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _parkInfoBlock(park),
+                      const SizedBox(height: 14),
+                      const _SectionTitle('СТАТИСТИКА'),
+                      const SizedBox(height: 6),
+                      Row(children: [
+                        Expanded(
+                            child: _statBox('${rides.length}',
+                                'аттракционов', AppColors.amb)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                            child: _statBox('$activeRides', 'в работе',
+                                AppColors.grn)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                            child: _statBox('$downtimeRides', 'в простое',
+                                AppColors.org)),
+                      ]),
+                      const SizedBox(height: 6),
+                      Row(children: [
+                        Expanded(
+                            child: _statBox('$operatorsCount',
+                                'операторов', AppColors.cyn)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                            child: _statBox('$openIncidents',
+                                'инцидентов', AppColors.red)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                            child: _statBox('$activeDowntimes',
+                                'простоев', AppColors.pur)),
+                      ]),
+                      const SizedBox(height: 14),
+                      const _SectionTitle('АДМИНИСТРАТОРЫ'),
+                      const SizedBox(height: 6),
+                      if (admins.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text('Нет активных администраторов',
+                              style: TextStyle(
+                                  fontSize: 12, color: AppColors.dim)),
+                        )
+                      else
+                        ...admins.map((a) => Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.panel2,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(children: [
+                                const Icon(Icons.person,
+                                    size: 16, color: AppColors.grn),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                            '${a.name} · PIN ${a.pin}',
+                                            style: const TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight:
+                                                    FontWeight.w600)),
+                                        if (a.phone.isNotEmpty)
+                                          Text(a.phone,
+                                              style: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  color: AppColors.dim)),
+                                      ]),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.person_remove,
+                                      size: 16),
+                                  color: AppColors.red,
+                                  tooltip: 'Снять с должности',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                      minWidth: 30, minHeight: 30),
+                                  onPressed: () async {
+                                    final ok =
+                                        await _confirmRemoveAdmin(a);
+                                    if (ok != true) return;
+                                    _doRemoveFromPark(db, a);
+                                    if (!ctx.mounted) return;
+                                    setS(() {});
+                                    _snack('Снят: ${a.name}');
+                                  },
+                                ),
+                              ]),
+                            )),
+                      const SizedBox(height: 6),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await _assignAdminToPark(db, park);
+                          if (!ctx.mounted) return;
+                          setS(() {});
+                        },
+                        icon: const Icon(Icons.person_add, size: 16),
+                        label: const Text('Назначить админа'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.amb,
+                          side: const BorderSide(color: AppColors.amb),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const _SectionTitle('ИСТОРИЯ АДМИНИСТРАТОРОВ'),
+                      const SizedBox(height: 6),
+                      if (history.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text('История пуста',
+                              style: TextStyle(
+                                  fontSize: 12, color: AppColors.dim)),
+                        )
+                      else
+                        ...history.map((h) => _historyRow(h)),
+                    ]),
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Закрыть')),
+            ],
+          );
+        },
       ),
     );
   }
@@ -885,7 +890,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
   // ═══════════ редактирование парка ═══════════
 
-  Future<void> _editPark(AppDatabase db, Park park) async {
+  Future<bool?> _editPark(AppDatabase db, Park park) async {
     final nameCtrl = TextEditingController(text: park.name);
     final addressCtrl = TextEditingController(text: park.address ?? '');
     final phoneCtrl = TextEditingController(text: park.phone ?? '');
@@ -893,6 +898,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.panel,
@@ -970,12 +977,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         ),
       ),
     );
-    if (ok != true) return;
+    if (ok != true) return null;
 
     final name = nameCtrl.text.trim();
     if (name.isEmpty) {
       _snack('Укажите название');
-      return;
+      return null;
     }
     park.name = name;
     park.openedAt = openedAt;
@@ -984,15 +991,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     park.phone =
         phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim();
     await db.save();
-    if (!mounted) return;
+    if (!mounted) return null;
     _snack('Парк обновлён');
+    return true;
   }
 
-  // ═══════════ снять админа / назначить с историей ═══════════
+  // ═══════════ снять / назначить с историей ═══════════
 
   Future<bool?> _confirmRemoveAdmin(Employee a) async {
     return showDialog<bool>(
       context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('Снять с должности?'),
@@ -1070,6 +1080,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       AppDatabase db, Employee admin, Region region) async {
     final action = await showModalBottomSheet<String>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: AppColors.panel,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -1273,6 +1284,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.panel,
@@ -1368,6 +1380,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.panel,
@@ -1462,6 +1475,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     final pickedCity = await showDialog<City>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('Выбрать город'),
@@ -1544,6 +1558,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.panel,
@@ -1628,6 +1643,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('Новый город в регион'),
@@ -1732,6 +1748,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: Text('Привязать парк · ${region.name}'),
@@ -1821,6 +1838,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     return showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('Город уже существует'),
@@ -1861,6 +1879,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     return showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('Локация уже существует'),
@@ -1897,6 +1916,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Future<bool?> _confirmAssignAdmin(Employee admin, Park park) async {
     return showDialog<bool>(
       context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: const Text('Подтвердить назначение?'),
@@ -1962,6 +1983,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.panel,
@@ -2068,6 +2090,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   Future<void> _deleteRegion(AppDatabase db, Region r) async {
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: Text('Удалить регион «${r.name}»?'),
@@ -2101,6 +2124,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     String? selId = available.first.id;
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.panel,
@@ -2141,6 +2165,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     final existing = db.regionalAdminsOf(region.id);
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: Text('Рег. админы · ${region.name}'),
@@ -2221,6 +2246,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: Text('В регион · ${region.name}'),
@@ -2312,15 +2338,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     setState(() {});
   }
 
-  Future<void> _assignAdminToPark(AppDatabase db, Park park) async {
+  Future<bool?> _assignAdminToPark(AppDatabase db, Park park) async {
     final parkLoc = db.locById(park.locId);
     final parkCityId = parkLoc?.cityId;
     final cityName = parkCityId == null
         ? '—'
         : (db.cityById(parkCityId)?.name ?? '—');
 
-    await showDialog<void>(
+    final result = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
           bool showAll = false;
@@ -2471,7 +2499,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                                           ? 'Переведён из другого парка'
                                           : 'Назначен администратором');
 
-                                  Navigator.pop(ctx);
+                                  Navigator.pop(ctx, true);
                                   _snack('Назначен: ${a.name}');
                                 },
                                 child: const Text('Выбрать',
@@ -2487,9 +2515,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                       style: FilledButton.styleFrom(
                           backgroundColor: AppColors.amb,
                           foregroundColor: const Color(0xFF1C1204)),
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _createAdmin(db, parkId: park.id);
+                      onPressed: () async {
+                        final created =
+                            await _createAdmin(db, parkId: park.id);
+                        if (created == true && ctx.mounted) {
+                          Navigator.pop(ctx, true);
+                        }
                       },
                       icon: const Icon(Icons.add, size: 16),
                       label: const Text('Создать нового'),
@@ -2500,7 +2531,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             ),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(ctx),
+                  onPressed: () => Navigator.pop(ctx, false),
                   child: const Text('Отмена')),
             ],
           );
@@ -2508,9 +2539,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       ),
     );
     setState(() {});
+    return result;
   }
 
-  Future<void> _createAdmin(AppDatabase db,
+  Future<bool?> _createAdmin(AppDatabase db,
       {String? regionId, String? parkId}) async {
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
@@ -2519,6 +2551,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
 
     final ok = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
         title: Text(isRegional ? 'Новый рег. админ' : 'Новый админ парка'),
@@ -2560,22 +2594,22 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true) return null;
     final name = nameCtrl.text.trim();
     final phone = phoneCtrl.text.trim();
     final pin = pinCtrl.text.trim();
     if (name.isEmpty) {
       _snack('Укажите ФИО');
-      return;
+      return null;
     }
     if (pin.length < 4 || pin.length > 6 || int.tryParse(pin) == null) {
       _snack('PIN: 4–6 цифр');
-      return;
+      return null;
     }
     if (db.employees
         .any((a) => a.status == EmployeeStatus.active && a.pin == pin)) {
       _snack('PIN уже используется');
-      return;
+      return null;
     }
     final now = DateTime.now();
     String? cityId;
@@ -2611,9 +2645,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     await db.save();
     DebugLog.instance.info(
         'admin created: $name (${isRegional ? "regional" : "park"})');
-    if (!mounted) return;
+    if (!mounted) return null;
     _snack('Админ создан');
     setState(() {});
+    return true;
   }
 
   // ═══════════ helpers ═══════════
