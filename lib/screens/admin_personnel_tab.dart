@@ -1358,136 +1358,136 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   }
 
   Widget _infoSection(Employee e, bool canManage, StateSetter setS) {
-  final parks = _approvedParkIds(e);
-  final parkNames = parks
-      .map((pid) => db.parkById(pid)?.name)
-      .where((x) => x != null)
-      .cast<String>()
-      .join(', ');
-  final managers = db.managersOf(e);
-  final managersLabel = managers.isEmpty
-      ? 'не назначен'
-      : managers.map((m) => m.name).join(', ');
-  final managersTitle = managers.length > 1 ? 'Руководители' : 'Руководитель';
+    final parks = _approvedParkIds(e);
+    final parkNames = parks
+        .map((pid) => db.parkById(pid)?.name)
+        .where((x) => x != null)
+        .cast<String>()
+        .join(', ');
+    final managers = db.managersOf(e);
+    final managersLabel = managers.isEmpty
+        ? 'не назначен'
+        : managers.map((m) => m.name).join(', ');
+    final managersTitle =
+        managers.length > 1 ? 'Руководители' : 'Руководитель';
 
-  return Container(
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: const Color(0xFF0E1420),
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _infoLine(
-        icon: Icons.phone,
-        label: 'Телефон',
-        value: e.phone.isEmpty ? 'не указан' : e.phone,
-        trailing: e.phone.isEmpty
-            ? null
-            : Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(
-                  icon: const Icon(Icons.copy, size: 14),
-                  color: AppColors.mut,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 24, minHeight: 24),
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: e.phone));
-                    _snack('Телефон скопирован');
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.phone, size: 14),
-                  color: AppColors.grn,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 24, minHeight: 24),
-                  onPressed: () => _callPhone(e.phone),
-                ),
-              ]),
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E1420),
+        borderRadius: BorderRadius.circular(10),
       ),
-      _infoLine(
-        icon: Icons.key,
-        label: 'PIN',
-        value: e.pin,
-        valueMono: true,
-      ),
-      _infoLine(
-        icon: Icons.nfc,
-        label: 'Бейдж',
-        value: e.badgeId ?? 'не привязан',
-        valueMono: e.badgeId != null,
-        valueColor: e.badgeId != null ? AppColors.grn : AppColors.dim,
-        trailing: canManage
-            ? Row(mainAxisSize: MainAxisSize.min, children: [
-                if (e.badgeId != null)
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _infoLine(
+          icon: Icons.phone,
+          label: 'Телефон',
+          value: e.phone.isEmpty ? 'не указан' : e.phone,
+          trailing: e.phone.isEmpty
+              ? null
+              : Row(mainAxisSize: MainAxisSize.min, children: [
                   IconButton(
-                    icon: const Icon(Icons.close, size: 14),
-                    color: AppColors.red,
-                    tooltip: 'Отвязать',
+                    icon: const Icon(Icons.copy, size: 14),
+                    color: AppColors.mut,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: e.phone));
+                      _snack('Телефон скопирован');
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.phone, size: 14),
+                    color: AppColors.grn,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
+                    onPressed: () => _callPhone(e.phone),
+                  ),
+                ]),
+        ),
+        _infoLine(
+          icon: Icons.key,
+          label: 'PIN',
+          value: e.pin,
+          valueMono: true,
+        ),
+        _infoLine(
+          icon: Icons.nfc,
+          label: 'Бейдж',
+          value: e.badgeId ?? 'не привязан',
+          valueMono: e.badgeId != null,
+          valueColor: e.badgeId != null ? AppColors.grn : AppColors.dim,
+          trailing: canManage
+              ? Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (e.badgeId != null)
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 14),
+                      color: AppColors.red,
+                      tooltip: 'Отвязать',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                          minWidth: 24, minHeight: 24),
+                      onPressed: () => _unbindBadge(e, setS),
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.add, size: 14),
+                    color: AppColors.cyn,
+                    tooltip: e.badgeId != null
+                        ? 'Заменить бейдж'
+                        : 'Привязать бейдж',
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
                         minWidth: 24, minHeight: 24),
-                    onPressed: () => _unbindBadge(e, setS),
+                    onPressed: () => _bindBadge(e, setS),
                   ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 14),
-                  color: AppColors.cyn,
-                  tooltip: e.badgeId != null
-                      ? 'Заменить бейдж'
-                      : 'Привязать бейдж',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                      minWidth: 24, minHeight: 24),
-                  onPressed: () => _bindBadge(e, setS),
-                ),
-              ])
-            : null,
-      ),
-      _infoLine(
-        icon: Icons.work_outline,
-        label: 'Парки',
-        value: parkNames.isEmpty ? 'Свободен' : parkNames,
-      ),
-      if (e.regionId != null)
-        _infoLine(
-          icon: Icons.map_outlined,
-          label: 'Регион',
-          value: db.regionById(e.regionId)?.name ?? '—',
-        ),
-      if (e.role != EmployeeRole.superAdmin)
-        _infoLine(
-          icon: Icons.supervisor_account,
-          label: managersTitle,
-          value: managersLabel,
-          valueColor:
-              managers.isEmpty ? AppColors.dim : null,
-          trailing: canManage
-              ? IconButton(
-                  icon: const Icon(Icons.edit, size: 14),
-                  color: AppColors.cyn,
-                  tooltip: 'Сменить руководителя',
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 24, minHeight: 24),
-                  onPressed: () => _changeManager(e, setS),
-                )
+                ])
               : null,
         ),
-      _infoLine(
-        icon: Icons.calendar_today,
-        label: 'Дата приёма',
-        value: _fmtDate(e.createdAt),
-      ),
-      if (e.statusNote != null && e.statusNote!.isNotEmpty)
         _infoLine(
-          icon: Icons.info_outline,
-          label: 'Заметка',
-          value: e.statusNote!,
-          valueColor: AppColors.amb2,
+          icon: Icons.work_outline,
+          label: 'Парки',
+          value: parkNames.isEmpty ? 'Свободен' : parkNames,
         ),
-    ]),
-  );
-}
+        if (e.regionId != null)
+          _infoLine(
+            icon: Icons.map_outlined,
+            label: 'Регион',
+            value: db.regionById(e.regionId)?.name ?? '—',
+          ),
+        if (e.role != EmployeeRole.superAdmin)
+          _infoLine(
+            icon: Icons.supervisor_account,
+            label: managersTitle,
+            value: managersLabel,
+            valueColor: managers.isEmpty ? AppColors.dim : null,
+            trailing: canManage
+                ? IconButton(
+                    icon: const Icon(Icons.edit, size: 14),
+                    color: AppColors.cyn,
+                    tooltip: 'Сменить руководителя',
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
+                    onPressed: () => _changeManager(e, setS),
+                  )
+                : null,
+          ),
+        _infoLine(
+          icon: Icons.calendar_today,
+          label: 'Дата приёма',
+          value: _fmtDate(e.createdAt),
+        ),
+        if (e.statusNote != null && e.statusNote!.isNotEmpty)
+          _infoLine(
+            icon: Icons.info_outline,
+            label: 'Заметка',
+            value: e.statusNote!,
+            valueColor: AppColors.amb2,
+          ),
+      ]),
+    );
+  }
 
   Widget _infoLine({
     required IconData icon,
@@ -1971,7 +1971,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     _snack('Роли обновлены');
   }
 
-  // ═══════════ смена руководителя ═══════════
+  // ═══════════ смена руководителя (мультивыбор) ═══════════
 
   Future<void> _changeManager(Employee e, StateSetter setS) async {
     final candidates = db.allowedManagersFor(e);
@@ -1980,11 +1980,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       return;
     }
 
-    String? selectedId = e.managerId;
-    if (selectedId != null &&
-        !candidates.any((c) => c.id == selectedId)) {
-      selectedId = null;
+    String? primaryId = e.managerId;
+    final extras = Set<String>.from(e.additionalManagerIds);
+
+    if (primaryId != null && !candidates.any((c) => c.id == primaryId)) {
+      primaryId = null;
     }
+    extras.removeWhere(
+        (id) => id == primaryId || !candidates.any((c) => c.id == id));
 
     final ok = await showDialog<bool>(
       context: context,
@@ -1993,113 +1996,60 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS2) => AlertDialog(
           backgroundColor: AppColors.panel,
-          title: Text('Руководитель · ${e.name}'),
+          title: Text('Руководители · ${e.name}'),
           content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Роль ${e.role.label} может подчиняться: ${e.role.allowedManagerRoles.map((r) => r.label).join(", ")}',
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.dim),
-                ),
-                const SizedBox(height: 8),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 4),
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: selectedId == null
-                                ? AppColors.amb.withValues(alpha: 0.1)
-                                : AppColors.panel2,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: selectedId == null
-                                  ? AppColors.amb.withValues(alpha: 0.4)
-                                  : Colors.transparent,
-                            ),
-                          ),
-                          child: InkWell(
-                            onTap: () => setS2(() => selectedId = null),
-                            child: Row(children: [
-                              Icon(
-                                selectedId == null
-                                    ? Icons.radio_button_checked
-                                    : Icons.radio_button_off,
-                                size: 18,
-                                color: selectedId == null
-                                    ? AppColors.amb
-                                    : AppColors.dim,
-                              ),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text('Без руководителя',
-                                    style: TextStyle(fontSize: 13)),
-                              ),
-                            ]),
-                          ),
-                        ),
-                        ...candidates.map((c) => Container(
-                              margin: const EdgeInsets.only(bottom: 4),
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: selectedId == c.id
-                                    ? AppColors.amb
-                                        .withValues(alpha: 0.1)
-                                    : AppColors.panel2,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: selectedId == c.id
-                                      ? AppColors.amb
-                                          .withValues(alpha: 0.4)
-                                      : Colors.transparent,
-                                ),
-                              ),
-                              child: InkWell(
-                                onTap: () =>
-                                    setS2(() => selectedId = c.id),
-                                child: Row(children: [
-                                  Icon(
-                                    selectedId == c.id
-                                        ? Icons.radio_button_checked
-                                        : Icons.radio_button_off,
-                                    size: 18,
-                                    color: selectedId == c.id
-                                        ? AppColors.amb
-                                        : AppColors.dim,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(c.name,
-                                            style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight:
-                                                    FontWeight.w600)),
-                                        Text(
-                                          '${c.role.label}${c.jobTitle != null ? " · ${c.jobTitle}" : ""}',
-                                          style: const TextStyle(
-                                              fontSize: 10.5,
-                                              color: AppColors.dim),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ]),
-                              ),
-                            )),
-                      ],
-                    ),
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Роль ${e.role.label} подчиняется: ${e.role.allowedManagerRoles.map((r) => r.label).join(", ")}',
+                    style:
+                        const TextStyle(fontSize: 11, color: AppColors.dim),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  const Text(
+                    '⚪ Основной (один) · ☑ Дополнительные (несколько)',
+                    style:
+                        TextStyle(fontSize: 11, color: AppColors.dim),
+                  ),
+                  const SizedBox(height: 10),
+                  _managerRow(
+                    name: 'Без основного руководителя',
+                    role: '',
+                    isPrimary: primaryId == null,
+                    isExtra: false,
+                    onTapPrimary: () => setS2(() => primaryId = null),
+                    onTapExtra: null,
+                    showCheckbox: false,
+                  ),
+                  ...candidates.map((c) {
+                    final isPrimary = primaryId == c.id;
+                    final isExtra = extras.contains(c.id);
+                    return _managerRow(
+                      name: c.name,
+                      role:
+                          '${c.role.label}${c.jobTitle != null ? " · ${c.jobTitle}" : ""}',
+                      isPrimary: isPrimary,
+                      isExtra: isExtra,
+                      onTapPrimary: () => setS2(() {
+                        primaryId = c.id;
+                        extras.remove(c.id);
+                      }),
+                      onTapExtra: () => setS2(() {
+                        if (isPrimary) return;
+                        if (extras.contains(c.id)) {
+                          extras.remove(c.id);
+                        } else {
+                          extras.add(c.id);
+                        }
+                      }),
+                    );
+                  }),
+                ],
+              ),
             ),
           ),
           actions: [
@@ -2119,15 +2069,90 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
     if (ok != true) return;
 
-    if (selectedId != null && db.wouldCreateCycle(e.id, selectedId!)) {
+    if (primaryId != null && db.wouldCreateCycle(e.id, primaryId!)) {
       _snack('Нельзя: это создаст циклическую иерархию');
       return;
     }
+    extras.remove(primaryId);
 
-    e.managerId = selectedId;
+    e.managerId = primaryId;
+    e.additionalManagerIds = extras.toList();
     await db.save();
     setS(() {});
-    _snack('Руководитель обновлён');
+    _snack('Руководители обновлены');
+  }
+
+  Widget _managerRow({
+    required String name,
+    required String role,
+    required bool isPrimary,
+    required bool isExtra,
+    required VoidCallback onTapPrimary,
+    required VoidCallback? onTapExtra,
+    bool showCheckbox = true,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: isPrimary
+            ? AppColors.amb.withValues(alpha: 0.1)
+            : (isExtra
+                ? AppColors.cyn.withValues(alpha: 0.08)
+                : AppColors.panel2),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: isPrimary
+              ? AppColors.amb.withValues(alpha: 0.4)
+              : (isExtra
+                  ? AppColors.cyn.withValues(alpha: 0.3)
+                  : Colors.transparent),
+        ),
+      ),
+      child: Row(children: [
+        InkWell(
+          onTap: onTapPrimary,
+          borderRadius: BorderRadius.circular(99),
+          child: Icon(
+            isPrimary
+                ? Icons.radio_button_checked
+                : Icons.radio_button_off,
+            size: 18,
+            color: isPrimary ? AppColors.amb : AppColors.dim,
+          ),
+        ),
+        const SizedBox(width: 6),
+        if (showCheckbox)
+          InkWell(
+            onTap: onTapExtra,
+            borderRadius: BorderRadius.circular(6),
+            child: Icon(
+              isExtra
+                  ? Icons.check_box
+                  : Icons.check_box_outline_blank,
+              size: 18,
+              color: isExtra ? AppColors.cyn : AppColors.dim,
+            ),
+          )
+        else
+          const SizedBox(width: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+              if (role.isNotEmpty)
+                Text(role,
+                    style: const TextStyle(
+                        fontSize: 10.5, color: AppColors.dim)),
+            ],
+          ),
+        ),
+      ]),
+    );
   }
 
   // ═══════════ смена места работы ═══════════
