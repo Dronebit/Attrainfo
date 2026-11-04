@@ -9,8 +9,8 @@ enum EmployeeRole {
 extension EmployeeRoleX on EmployeeRole {
   String get label => const {
         EmployeeRole.superAdmin: 'Super',
-        EmployeeRole.regionalAdmin: 'Рег.Адм.',
-        EmployeeRole.parkAdmin: 'Адм.Парк',
+        EmployeeRole.regionalAdmin: 'Регион',
+        EmployeeRole.parkAdmin: 'Парк',
         EmployeeRole.operator: 'Оператор',
         EmployeeRole.technician: 'Механик',
       }[this]!;
@@ -33,7 +33,6 @@ extension EmployeeRoleX on EmployeeRole {
       this == EmployeeRole.operator ||
       this == EmployeeRole.technician;
 
-  /// Уровень в иерархии (чем больше, тем выше)
   int get level => const {
         EmployeeRole.superAdmin: 5,
         EmployeeRole.regionalAdmin: 4,
@@ -42,29 +41,26 @@ extension EmployeeRoleX on EmployeeRole {
         EmployeeRole.technician: 2,
       }[this]!;
 
-  /// Кем может руководить эта роль (сверху вниз)
-  /// Кем может руководить эта роль (сверху вниз)
-List<EmployeeRole> get canManageRoles => const <EmployeeRole, List<EmployeeRole>>{
-      EmployeeRole.superAdmin: [
-        EmployeeRole.regionalAdmin,
-        EmployeeRole.parkAdmin,
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-      ],
-      EmployeeRole.regionalAdmin: [
-        EmployeeRole.parkAdmin,
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-      ],
-      EmployeeRole.parkAdmin: [
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-      ],
-      EmployeeRole.operator: [],
-      EmployeeRole.technician: [],
-    }[this]!;
+  List<EmployeeRole> get canManageRoles => const <EmployeeRole, List<EmployeeRole>>{
+        EmployeeRole.superAdmin: [
+          EmployeeRole.regionalAdmin,
+          EmployeeRole.parkAdmin,
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+        EmployeeRole.regionalAdmin: [
+          EmployeeRole.parkAdmin,
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+        EmployeeRole.parkAdmin: [
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+        EmployeeRole.operator: [],
+        EmployeeRole.technician: [],
+      }[this]!;
 
-  /// Кем может быть руководитель этой роли
   List<EmployeeRole> get allowedManagerRoles =>
       EmployeeRole.values.where((r) => r.canManageRoles.contains(this)).toList();
 }
@@ -150,6 +146,11 @@ class Employee {
   String? badgeId;
 
   EmployeeRole role;
+
+  /// Дополнительные роли (например, [operator] + [technician] в одном парке).
+  /// Основная роль остаётся в [role].
+  List<EmployeeRole> additionalRoles;
+
   EmployeeStatus status;
 
   String? parkId;
@@ -159,7 +160,6 @@ class Employee {
 
   String? lastCityId;
 
-  /// Кто непосредственный руководитель (Employee.id)
   String? managerId;
 
   DateTime createdAt;
@@ -174,6 +174,7 @@ class Employee {
     this.pin = '0000',
     this.badgeId,
     this.role = EmployeeRole.operator,
+    List<EmployeeRole>? additionalRoles,
     this.status = EmployeeStatus.active,
     this.parkId,
     this.regionId,
@@ -185,11 +186,18 @@ class Employee {
     this.statusChangedAt,
     this.statusNote,
     List<RoleHistoryEntry>? history,
-  })  : createdAt = createdAt ?? DateTime.now(),
+  })  : additionalRoles = additionalRoles ?? [],
+        createdAt = createdAt ?? DateTime.now(),
         history = history ?? [];
 
   bool get isAdmin => role.canBeAdmin;
   bool get canWork => status.canWork;
+
+  /// Проверка «есть ли у сотрудника такая роль» — с учётом доп. ролей.
+  bool hasRole(EmployeeRole r) => role == r || additionalRoles.contains(r);
+
+  /// Все роли (основная + дополнительные) — для отображения.
+  List<EmployeeRole> get allRoles => [role, ...additionalRoles];
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -198,6 +206,8 @@ class Employee {
         'pin': pin,
         'badgeId': badgeId,
         'role': role.name,
+        'additionalRoles':
+            additionalRoles.map((r) => r.name).toList(),
         'status': status.name,
         'parkId': parkId,
         'regionId': regionId,
@@ -221,6 +231,13 @@ class Employee {
           (e) => e.name == j['role'],
           orElse: () => EmployeeRole.operator,
         ),
+        additionalRoles: (j['additionalRoles'] as List?)
+                ?.map((e) => EmployeeRole.values.firstWhere(
+                      (r) => r.name == e,
+                      orElse: () => EmployeeRole.operator,
+                    ))
+                .toList() ??
+            [],
         status: EmployeeStatus.values.firstWhere(
           (e) => e.name == j['status'],
           orElse: () => EmployeeStatus.active,
