@@ -11,8 +11,9 @@ import '../models/region.dart';
 import 'seed.dart';
 
 class AppDatabase extends ChangeNotifier {
-  static const _key = 'attrakontrol-v6';
-  static const _oldKey = 'attrakontrol-v5';
+  static const _key = 'attrakontrol-v7';
+  static const _oldKey = 'attrakontrol-v6';
+  static const _legacyKey = 'attrakontrol-v5';
   static const masterPin = '9999';
 
   List<City> cities = [];
@@ -30,6 +31,8 @@ class AppDatabase extends ChangeNotifier {
   Shift? activeShift;
   bool opSelectingRides = false;
   String? currentParkId;
+
+  // ═══════════ базовые геттеры ═══════════
 
   City? cityById(String? id) => cities.firstWhereOrNull((c) => c.id == id);
   ParkLocation? locById(String? id) =>
@@ -57,6 +60,8 @@ class AppDatabase extends ChangeNotifier {
     final c = l == null ? null : cityById(l.cityId);
     return [c?.name, l?.name, p?.name].where((x) => x != null).join(' · ');
   }
+
+  // ═══════════ сотрудники ═══════════
 
   Employee? employeeById(String? id) =>
       employees.firstWhereOrNull((e) => e.id == id);
@@ -94,6 +99,8 @@ class AppDatabase extends ChangeNotifier {
     return (e != null && e.role == EmployeeRole.technician) ? e : null;
   }
 
+  // ═══════════ списки по ролям ═══════════
+
   List<Employee> get operators =>
       employees.where((e) => e.role == EmployeeRole.operator).toList();
 
@@ -122,6 +129,116 @@ class AppDatabase extends ChangeNotifier {
           e.parkId == parkId &&
           e.status == EmployeeStatus.active)
       .toList();
+
+  // ═══════════ иерархия (managerId) ═══════════
+
+  /// Кто может быть руководителем для этой роли
+  List<Employee> allowedManagersFor(Employee e) {
+    final roles = e.role.allowedManagerRoles;
+    return employees
+        .where((x) =>
+            x.id != e.id &&
+            x.status == EmployeeStatus.active &&
+            roles.contains(x.role))
+        .toList()
+      ..sort((a, b) {
+        if (a.role.level != b.role.level) {
+          return b.role.level.compareTo(a.role.level);
+        }
+        return a.name.compareTo(b.name);
+      });
+  }
+
+  /// Проверка на цикл: если назначить managerId, не создастся ли петля
+  bool wouldCreateCycle(String employeeId, String managerId) {
+    String? current = managerId;
+    final visited = <String>{};
+    while (current != null) {
+      if (current == employeeId) return true;
+      if (!visited.add(current)) return true;
+      current = employeeById(current)?.managerId;
+    }
+    return false;
+  }
+
+  /// Прямые подчинённые сотрудника
+  List<Employee> directReports(String managerId) => employees
+      .where((e) =>
+          e.managerId == managerId && e.status != EmployeeStatus.fired)
+      .toList()
+    ..sort((a, b) {
+      if (a.role.level != b.role.level) {
+        return b.role.level.compareTo(a.role.level);
+      }
+      return a.name.compareTo(b.name);
+    });
+
+  /// Корневые сотрудники (без managerId или с недействительным managerId)
+  List<Employee> rootEmployees() {
+    return employees.where((e) {
+      if (e.status == EmployeeStatus.fired) return false;
+      if (e.managerId == null) return true;
+      final mgr = employeeById(e.managerId);
+      if (mgr == null) return true;
+      if (mgr.status == EmployeeStatus.fired) return true;
+      return false;
+    }).toList()
+      ..sort((a, b) {
+        if (a.role.level != b.role.level) {
+          return b.role.level.compareTo(a.role.level);
+        }
+        return a.name.compareTo(b.name);
+      });
+  }
+
+  /// Автопроставить managerId всем, у кого он пустой
+  void _backfillManagers() {
+    for (final e in employees) {
+      if (e.managerId != null) continue;
+      if (e.role == EmployeeRole.superAdmin) continue;
+
+      if (e.role == EmployeeRole.regionalAdmin && e.regionId != null) {
+        final superAdmin = employees.firstWhereOrNull((x) =>
+            x.role == EmployeeRole.superAdmin &&
+            x.status == EmployeeStatus.active);
+        if (superAdmin != null) e.managerId = superAdmin.id;
+      } else if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
+        final regions = regionsOfPark(e.parkId!);
+        if (regions.isNotEmpty) {
+          final regionAdmin = employees.firstWhereOrNull((x) =>
+              x.role == EmployeeRole.regionalAdmin &&
+              x.regionId == regions.first.id &&
+              x.status == EmployeeStatus.active);
+          if (regionAdmin != null) {
+            e.managerId = regionAdmin.id;
+          } else {
+            final superAdmin = employees.firstWhereOrNull((x) =>
+                x.role == EmployeeRole.superAdmin &&
+                x.status == EmployeeStatus.active);
+            if (superAdmin != null) e.managerId = superAdmin.id;
+          }
+        }
+      } else if (e.role == EmployeeRole.operator ||
+          e.role == EmployeeRole.technician) {
+        String? parkForManager = e.parkId;
+        if (parkForManager == null && e.role == EmployeeRole.operator) {
+          final links = linksForOperator(e.id)
+              .where((l) => l.status == LinkStatus.approved)
+              .toList();
+          if (links.isNotEmpty) parkForManager = links.first.parkId;
+        }
+        if (parkForManager != null) {
+          final parkAdmin = employees.firstWhereOrNull((x) =>
+              x.role == EmployeeRole.parkAdmin &&
+              x.parkId == parkForManager &&
+              x.status == EmployeeStatus.active);
+          if (parkAdmin != null) e.managerId = parkAdmin.id;
+        }
+      }
+    }
+  }
+
+  // ═══════════ регионы ═══════════
 
   List<Park> parksOfRegion(String regId) {
     final region = regionById(regId);
@@ -191,19 +308,19 @@ class AppDatabase extends ChangeNotifier {
   }
 
   City? cityOfAdmin(Employee admin) {
-  // Если привязан к парку — вычисляем из парка
-  if (admin.role == EmployeeRole.parkAdmin && admin.parkId != null) {
-    final park = parkById(admin.parkId);
-    if (park == null) return null;
-    final loc = locById(park.locId);
-    return loc == null ? null : cityById(loc.cityId);
+    if (admin.role == EmployeeRole.parkAdmin && admin.parkId != null) {
+      final park = parkById(admin.parkId);
+      if (park == null) return null;
+      final loc = locById(park.locId);
+      return loc == null ? null : cityById(loc.cityId);
+    }
+    if (admin.lastCityId != null) {
+      return cityById(admin.lastCityId);
+    }
+    return null;
   }
-  // Если снят (parkId == null) — возвращаем сохранённый город
-  if (admin.lastCityId != null) {
-    return cityById(admin.lastCityId);
-  }
-  return null;
-}
+
+  // ═══════════ регионы CRUD ═══════════
 
   Region createRegion(String name, {List<String>? parkIds}) {
     final region = Region(
@@ -263,6 +380,8 @@ class AppDatabase extends ChangeNotifier {
     region.parkIds.remove(parkId);
     save();
   }
+
+  // ═══════════ связи оператор ↔ парк ═══════════
 
   List<OperatorParkLink> linksForOperator(String opId) =>
       operatorLinks.where((l) => l.operatorId == opId).toList();
@@ -331,6 +450,8 @@ class AppDatabase extends ChangeNotifier {
     operatorLinks.removeWhere((l) => l.id == linkId);
     save();
   }
+
+  // ═══════════ вакансии ═══════════
 
   List<ShiftVacancy> vacanciesForPark(String parkId) => vacancies
       .where((v) => v.parkId == parkId)
@@ -445,6 +566,8 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
+  // ═══════════ смена (реальная) ═══════════
+
   void startShift(String parkId, {String? operatorId, String? vacancyId}) {
     activeShift = Shift(
       parkId: parkId,
@@ -479,6 +602,8 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
+  // ═══════════ аналитика ═══════════
+
   List<({String rideId, double total, Map<DowntimeReason, double> byReason})>
       downtimeByRide(int periodDays) {
     final now = DateTime.now();
@@ -502,6 +627,8 @@ class AppDatabase extends ChangeNotifier {
         .toList()
       ..sort((a, b) => b.total.compareTo(a.total));
   }
+
+  // ═══════════ save / load / migrate ═══════════
 
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
@@ -528,21 +655,42 @@ class AppDatabase extends ChangeNotifier {
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final v6Raw = prefs.getString(_key);
-    if (v6Raw != null) {
+
+    // ─── v7 (новый формат) ───
+    final v7Raw = prefs.getString(_key);
+    if (v7Raw != null) {
       try {
-        _applyV6(jsonDecode(v6Raw));
+        _applyV6(jsonDecode(v7Raw));
+        _backfillManagers();
         notifyListeners();
         return;
       } catch (e) {
-        debugPrint('Failed to load v6: $e');
+        debugPrint('Failed to load v7: $e');
       }
     }
-    final v5Raw = prefs.getString(_oldKey);
+
+    // ─── v6 → v7 (миграция: добавляем managerId) ───
+    final v6Raw = prefs.getString(_oldKey);
+    if (v6Raw != null) {
+      try {
+        final j = jsonDecode(v6Raw);
+        _applyV6(j);
+        _backfillManagers();
+        await save();
+        notifyListeners();
+        return;
+      } catch (e) {
+        debugPrint('Failed to migrate v6: $e');
+      }
+    }
+
+    // ─── v5 → v7 (двойная миграция) ───
+    final v5Raw = prefs.getString(_legacyKey);
     if (v5Raw != null) {
       try {
         final j = jsonDecode(v5Raw);
         _applyV5AndMigrate(j);
+        _backfillManagers();
         await save();
         notifyListeners();
         return;
@@ -550,10 +698,14 @@ class AppDatabase extends ChangeNotifier {
         debugPrint('Failed to migrate v5: $e');
       }
     }
+
+    // ─── Свежий seed ───
     _applyV6(_seedJson());
     if (employees.isEmpty) {
       _applyV6(_seedJson());
     }
+    _backfillManagers();
+    await save();
     notifyListeners();
   }
 
@@ -561,7 +713,9 @@ class AppDatabase extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
     await prefs.remove(_oldKey);
+    await prefs.remove(_legacyKey);
     _applyV6(_seedJson());
+    _backfillManagers();
     activeShift = null;
     opSelectingRides = false;
     currentParkId = null;
