@@ -1085,7 +1085,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     final result = await showDialog<String>(
       context: context,
       useRootNavigator: true,
-      barrierIsDismissible: false,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS2) {
           final locs = db.locations
