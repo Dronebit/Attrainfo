@@ -22,10 +22,37 @@ class Park {
   final String id;
   String locId;
   String name;
-  Park({required this.id, required this.locId, required this.name});
-  Map<String, dynamic> toJson() => {'id': id, 'locId': locId, 'name': name};
-  factory Park.fromJson(Map<String, dynamic> j) =>
-      Park(id: j['id'], locId: j['locId'], name: j['name']);
+  DateTime? openedAt;
+  String? address;
+  String? phone;
+
+  Park({
+    required this.id,
+    required this.locId,
+    required this.name,
+    this.openedAt,
+    this.address,
+    this.phone,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'locId': locId,
+        'name': name,
+        'openedAt': openedAt?.toIso8601String(),
+        'address': address,
+        'phone': phone,
+      };
+
+  factory Park.fromJson(Map<String, dynamic> j) => Park(
+        id: j['id'],
+        locId: j['locId'],
+        name: j['name'],
+        openedAt:
+            j['openedAt'] != null ? DateTime.parse(j['openedAt']) : null,
+        address: j['address'],
+        phone: j['phone'],
+      );
 }
 
 class Ride {
@@ -51,17 +78,7 @@ class Ride {
       );
 }
 
-class Technician {
-  final String id;
-  String name;
-  String role;
-  String phone;
-  Technician({required this.id, required this.name, required this.role, required this.phone});
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'name': name, 'role': role, 'phone': phone};
-  factory Technician.fromJson(Map<String, dynamic> j) =>
-      Technician(id: j['id'], name: j['name'], role: j['role'], phone: j['phone']);
-}
+
 
 class Downtime {
   final String id;
