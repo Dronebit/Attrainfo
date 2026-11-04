@@ -1358,131 +1358,136 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   }
 
   Widget _infoSection(Employee e, bool canManage, StateSetter setS) {
-    final parks = _approvedParkIds(e);
-    final parkNames = parks
-        .map((pid) => db.parkById(pid)?.name)
-        .where((x) => x != null)
-        .cast<String>()
-        .join(', ');
-    final manager =
-        e.managerId == null ? null : db.employeeById(e.managerId);
+  final parks = _approvedParkIds(e);
+  final parkNames = parks
+      .map((pid) => db.parkById(pid)?.name)
+      .where((x) => x != null)
+      .cast<String>()
+      .join(', ');
+  final managers = db.managersOf(e);
+  final managersLabel = managers.isEmpty
+      ? 'не назначен'
+      : managers.map((m) => m.name).join(', ');
+  final managersTitle = managers.length > 1 ? 'Руководители' : 'Руководитель';
 
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E1420),
-        borderRadius: BorderRadius.circular(10),
+  return Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: const Color(0xFF0E1420),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _infoLine(
+        icon: Icons.phone,
+        label: 'Телефон',
+        value: e.phone.isEmpty ? 'не указан' : e.phone,
+        trailing: e.phone.isEmpty
+            ? null
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  icon: const Icon(Icons.copy, size: 14),
+                  color: AppColors.mut,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 24, minHeight: 24),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: e.phone));
+                    _snack('Телефон скопирован');
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.phone, size: 14),
+                  color: AppColors.grn,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 24, minHeight: 24),
+                  onPressed: () => _callPhone(e.phone),
+                ),
+              ]),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _infoLine(
-          icon: Icons.phone,
-          label: 'Телефон',
-          value: e.phone.isEmpty ? 'не указан' : e.phone,
-          trailing: e.phone.isEmpty
-              ? null
-              : Row(mainAxisSize: MainAxisSize.min, children: [
+      _infoLine(
+        icon: Icons.key,
+        label: 'PIN',
+        value: e.pin,
+        valueMono: true,
+      ),
+      _infoLine(
+        icon: Icons.nfc,
+        label: 'Бейдж',
+        value: e.badgeId ?? 'не привязан',
+        valueMono: e.badgeId != null,
+        valueColor: e.badgeId != null ? AppColors.grn : AppColors.dim,
+        trailing: canManage
+            ? Row(mainAxisSize: MainAxisSize.min, children: [
+                if (e.badgeId != null)
                   IconButton(
-                    icon: const Icon(Icons.copy, size: 14),
-                    color: AppColors.mut,
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 24, minHeight: 24),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: e.phone));
-                      _snack('Телефон скопирован');
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.phone, size: 14),
-                    color: AppColors.grn,
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 24, minHeight: 24),
-                    onPressed: () => _callPhone(e.phone),
-                  ),
-                ]),
-        ),
-        _infoLine(
-          icon: Icons.key,
-          label: 'PIN',
-          value: e.pin,
-          valueMono: true,
-        ),
-        _infoLine(
-          icon: Icons.nfc,
-          label: 'Бейдж',
-          value: e.badgeId ?? 'не привязан',
-          valueMono: e.badgeId != null,
-          valueColor: e.badgeId != null ? AppColors.grn : AppColors.dim,
-          trailing: canManage
-              ? Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (e.badgeId != null)
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 14),
-                      color: AppColors.red,
-                      tooltip: 'Отвязать',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                          minWidth: 24, minHeight: 24),
-                      onPressed: () => _unbindBadge(e, setS),
-                    ),
-                  IconButton(
-                    icon: const Icon(Icons.add, size: 14),
-                    color: AppColors.cyn,
-                    tooltip: e.badgeId != null
-                        ? 'Заменить бейдж'
-                        : 'Привязать бейдж',
+                    icon: const Icon(Icons.close, size: 14),
+                    color: AppColors.red,
+                    tooltip: 'Отвязать',
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
                         minWidth: 24, minHeight: 24),
-                    onPressed: () => _bindBadge(e, setS),
+                    onPressed: () => _unbindBadge(e, setS),
                   ),
-                ])
+                IconButton(
+                  icon: const Icon(Icons.add, size: 14),
+                  color: AppColors.cyn,
+                  tooltip: e.badgeId != null
+                      ? 'Заменить бейдж'
+                      : 'Привязать бейдж',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                      minWidth: 24, minHeight: 24),
+                  onPressed: () => _bindBadge(e, setS),
+                ),
+              ])
+            : null,
+      ),
+      _infoLine(
+        icon: Icons.work_outline,
+        label: 'Парки',
+        value: parkNames.isEmpty ? 'Свободен' : parkNames,
+      ),
+      if (e.regionId != null)
+        _infoLine(
+          icon: Icons.map_outlined,
+          label: 'Регион',
+          value: db.regionById(e.regionId)?.name ?? '—',
+        ),
+      if (e.role != EmployeeRole.superAdmin)
+        _infoLine(
+          icon: Icons.supervisor_account,
+          label: managersTitle,
+          value: managersLabel,
+          valueColor:
+              managers.isEmpty ? AppColors.dim : null,
+          trailing: canManage
+              ? IconButton(
+                  icon: const Icon(Icons.edit, size: 14),
+                  color: AppColors.cyn,
+                  tooltip: 'Сменить руководителя',
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 24, minHeight: 24),
+                  onPressed: () => _changeManager(e, setS),
+                )
               : null,
         ),
+      _infoLine(
+        icon: Icons.calendar_today,
+        label: 'Дата приёма',
+        value: _fmtDate(e.createdAt),
+      ),
+      if (e.statusNote != null && e.statusNote!.isNotEmpty)
         _infoLine(
-          icon: Icons.work_outline,
-          label: 'Парки',
-          value: parkNames.isEmpty ? 'Свободен' : parkNames,
+          icon: Icons.info_outline,
+          label: 'Заметка',
+          value: e.statusNote!,
+          valueColor: AppColors.amb2,
         ),
-        if (e.regionId != null)
-          _infoLine(
-            icon: Icons.map_outlined,
-            label: 'Регион',
-            value: db.regionById(e.regionId)?.name ?? '—',
-          ),
-        if (e.role != EmployeeRole.superAdmin)
-          _infoLine(
-            icon: Icons.supervisor_account,
-            label: 'Руководитель',
-            value: manager?.name ?? 'не назначен',
-            trailing: canManage
-                ? IconButton(
-                    icon: const Icon(Icons.edit, size: 14),
-                    color: AppColors.cyn,
-                    tooltip: 'Сменить руководителя',
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 24, minHeight: 24),
-                    onPressed: () => _changeManager(e, setS),
-                  )
-                : null,
-          ),
-        _infoLine(
-          icon: Icons.calendar_today,
-          label: 'Дата приёма',
-          value: _fmtDate(e.createdAt),
-        ),
-        if (e.statusNote != null && e.statusNote!.isNotEmpty)
-          _infoLine(
-            icon: Icons.info_outline,
-            label: 'Заметка',
-            value: e.statusNote!,
-            valueColor: AppColors.amb2,
-          ),
-      ]),
-    );
-  }
+    ]),
+  );
+}
 
   Widget _infoLine({
     required IconData icon,
