@@ -374,26 +374,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                     }),
           ),
         ),
-        const SizedBox(height: 6),
-        Row(children: [
-          Expanded(
-            child: Text(
-              'Найдено: ${_filteredAll().length}',
-              style: const TextStyle(fontSize: 11, color: AppColors.dim),
-            ),
-          ),
-          if (_hasActiveFilters)
-            TextButton(
-              onPressed: () => setState(() {
-                _filterRegionId = null;
-                _filterCityId = null;
-                _filterStatus = null;
-                _query = '';
-                _searchCtrl.clear();
-              }),
-              child: const Text('Сбросить', style: TextStyle(fontSize: 12)),
-            ),
-        ]),
       ]),
     );
   }
@@ -443,7 +423,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       }
     }
 
-    // Добавляем регионы, где есть только рег. админ (без парков)
     final allRegionKeys = <String>{};
     allRegionKeys.addAll(grouped.keys);
     for (final r in regionals) {
@@ -460,6 +439,26 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       });
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(
+          child: Text(
+            'Найдено: ${all.length}',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.dim),
+          ),
+        ),
+        if (_hasActiveFilters)
+          TextButton(
+            onPressed: () => setState(() {
+              _filterRegionId = null;
+              _filterCityId = null;
+              _filterStatus = null;
+              _query = '';
+              _searchCtrl.clear();
+            }),
+            child: const Text('Сбросить', style: TextStyle(fontSize: 12)),
+          ),
+      ]),
+      const SizedBox(height: 8),
       if (supers.isNotEmpty) _superBlock(supers),
       if (regionKeys.isEmpty && loose.isEmpty && supers.isEmpty)
         _emptyState()
@@ -602,7 +601,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   ...regionAdmins.map((a) => Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: _employeeRow(a,
-                            labelPrefix: 'рег. админ',
                             roleOverride: 'Рег. админ'),
                       )),
                   ...cityKeys.map((ck) => _cityBlock(ck, cities[ck]!)),
@@ -749,9 +747,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 children: [
                   if (parkAdmin != null)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
+                      padding: const EdgeInsets.only(bottom: 4),
                       child: _employeeRow(parkAdmin,
-                          labelPrefix: 'админ',
                           roleOverride: 'Админ парка'),
                     ),
                   ...others.map((e) => _employeeRow(e)).toList(),
@@ -849,6 +846,26 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(
+          child: Text(
+            'Найдено: ${all.length}',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.dim),
+          ),
+        ),
+        if (_hasActiveFilters)
+          TextButton(
+            onPressed: () => setState(() {
+              _filterRegionId = null;
+              _filterCityId = null;
+              _filterStatus = null;
+              _query = '';
+              _searchCtrl.clear();
+            }),
+            child: const Text('Сбросить', style: TextStyle(fontSize: 12)),
+          ),
+      ]),
+      const SizedBox(height: 8),
       ...roots.map((e) => _treeNode(e, visibleIds, 0)),
     ]);
   }
@@ -998,106 +1015,128 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     return names.join(', ');
   }
 
-  // ═══════════ строка сотрудника (list view) ═══════════
+  // ═══════════ КРАСИВАЯ СТРОКА СОТРУДНИКА ═══════════
 
-  Widget _employeeRow(Employee e,
-      {String? labelPrefix, String? roleOverride}) {
+  Widget _employeeRow(Employee e, {String? roleOverride}) {
     final color = Color(e.status.colorValue);
     final roleColor = Color(e.role.colorValue);
     final roleLabel = roleOverride ?? e.role.label;
+
     return InkWell(
       onTap: () => _showEmployeeCard(e),
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: const Color(0xFF0A0E14),
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(8),
         ),
-        child: Row(children: [
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: roleColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: Center(
-              child: Text(_initials(e.name),
+        child: Row(
+          children: [
+            // Аватар
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: roleColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Text(
+                  _initials(e.name),
                   style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: roleColor)),
+                      color: roleColor),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(width: 10),
+
+            // Имя и Роль/Должность
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    e.name,
+                    style: const TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: roleColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          roleLabel,
+                          style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: roleColor),
+                        ),
+                      ),
+                      if (e.jobTitle != null &&
+                          e.jobTitle!.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            e.jobTitle!,
+                            style: const TextStyle(
+                                fontSize: 10.5, color: AppColors.dim),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // PIN и Статус
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Row(children: [
-                  if (labelPrefix != null)
-                    Text('$labelPrefix: ',
-                        style: const TextStyle(
-                            fontSize: 10.5,
-                            color: AppColors.dim,
-                            fontStyle: FontStyle.italic)),
-                  Flexible(
-                    child: Text(e.name,
-                        style: const TextStyle(
-                            fontSize: 12.5, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                  const SizedBox(width: 5),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: roleColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text(roleLabel,
-                        style: TextStyle(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w700,
-                            color: roleColor)),
-                  ),
-                  const SizedBox(width: 4),
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration:
-                        BoxDecoration(color: color, shape: BoxShape.circle),
-                  ),
-                ]),
-                if (e.jobTitle != null && e.jobTitle!.isNotEmpty)
-                  Text(e.jobTitle!,
-                      style: const TextStyle(
-                          fontSize: 10, color: AppColors.dim),
-                      overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('PIN ${e.pin}',
+                Text(
+                  'PIN ${e.pin}',
                   style: const TextStyle(
-                      fontSize: 10,
+                      fontSize: 10.5,
                       fontFamily: 'monospace',
-                      color: AppColors.mut)),
-              if (e.status != EmployeeStatus.active)
-                Text(e.status.label,
+                      color: AppColors.mut),
+                ),
+                if (e.status != EmployeeStatus.active)
+                  Text(
+                    e.status.label,
                     style: TextStyle(
                         fontSize: 9,
                         fontWeight: FontWeight.w600,
-                        color: color)),
-            ],
-          ),
-          const SizedBox(width: 2),
-          const Icon(Icons.chevron_right, size: 14, color: AppColors.dim),
-        ]),
+                        color: color),
+                  )
+                else
+                  Container(
+                    width: 6,
+                    height: 6,
+                    margin: const EdgeInsets.only(top: 3),
+                    decoration: BoxDecoration(
+                        color: color, shape: BoxShape.circle),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right, size: 16, color: AppColors.dim),
+          ],
+        ),
       ),
     );
   }
