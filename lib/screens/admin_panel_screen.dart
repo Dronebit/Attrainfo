@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data/app_database.dart';
+import '../data/debug_log.dart';
 import '../models/models.dart';
 import '../models/park_admin.dart';
 import '../models/region.dart';
@@ -37,7 +38,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     }
   }
 
-  // ═══════════════ PIN gate ═══════════════
+  // ═══════════ PIN gate ═══════════
 
   Widget _pinGate(AppDatabase db) {
     return Center(
@@ -171,7 +172,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         ),
       );
 
-  // ═══════════════ super view ═══════════════
+  // ═══════════ super view ═══════════
 
   Widget _superView(AppDatabase db, ParkAdmin admin) {
     final unassigned = db.unassignedParks;
@@ -213,44 +214,17 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       ),
       const SizedBox(height: 12),
 
-      // Кнопки создания
-      Wrap(spacing: 8, runSpacing: 8, children: [
+      // Кнопка создания региона
+      Row(children: [
         _primaryBtn(
           icon: Icons.add,
           label: 'Создать регион',
           onTap: () => _openRegionDialog(db, admin, null),
         ),
-        _smallBtn(
-          icon: Icons.location_city,
-          label: '+ Город',
-          onTap: () => _createCity(db),
-        ),
-        _smallBtn(
-          icon: Icons.place_outlined,
-          label: '+ Локация',
-          onTap: () => _createLocation(db),
-        ),
-        _smallBtn(
-          icon: Icons.attractions,
-          label: '+ Парк',
-          onTap: () => _createPark(db),
-        ),
       ]),
       const SizedBox(height: 14),
 
-      // Справочники
-      _directoriesSection(db),
-      const SizedBox(height: 14),
-
-      // Регионы
-      const Text('РЕГИОНЫ',
-          style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: AppColors.dim,
-              letterSpacing: 0.6)),
-      const SizedBox(height: 8),
-
+      // Дерево регионов
       if (db.regions.isEmpty)
         Container(
           padding: const EdgeInsets.symmetric(vertical: 46),
@@ -314,187 +288,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     ]);
   }
 
-  // ═══════════════ справочники ═══════════════
-
-  Widget _directoriesSection(AppDatabase db) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: _cardDeco,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          const Icon(Icons.folder_outlined, size: 16, color: AppColors.mut),
-          const SizedBox(width: 8),
-          const Text('Справочники',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-          const Spacer(),
-          Text(
-              'городов: ${db.cities.length} · локаций: ${db.locations.length} · парков: ${db.parks.length}',
-              style: const TextStyle(fontSize: 10.5, color: AppColors.dim)),
-        ]),
-        const SizedBox(height: 10),
-        _dirBlock(
-          title: 'Города',
-          icon: Icons.location_city,
-          count: db.cities.length,
-          onAdd: () => _createCity(db),
-          children: db.cities.map((c) {
-            final locs = db.locations.where((l) => l.cityId == c.id).length;
-            return _dirRow(
-              label: c.name,
-              subtitle: 'локаций: $locs',
-              onEdit: () => _editCity(db, c),
-              onDelete: () => _deleteCity(db, c),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 10),
-        _dirBlock(
-          title: 'Локации',
-          icon: Icons.place_outlined,
-          count: db.locations.length,
-          onAdd: () => _createLocation(db),
-          children: db.locations.map((l) {
-            final city = db.cityById(l.cityId);
-            final parks = db.parks.where((p) => p.locId == l.id).length;
-            return _dirRow(
-              label: l.name,
-              subtitle: '${city?.name ?? "—"} · парков: $parks',
-              onEdit: () => _editLocation(db, l),
-              onDelete: () => _deleteLocation(db, l),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 10),
-        _dirBlock(
-          title: 'Парки',
-          icon: Icons.attractions,
-          count: db.parks.length,
-          onAdd: () => _createPark(db),
-          children: db.parks.map((p) {
-            final loc = db.locById(p.locId);
-            final city = loc == null ? null : db.cityById(loc.cityId);
-            final region = db.regionsOfPark(p.id).firstOrNull;
-            return _dirRow(
-              label: p.name,
-              subtitle:
-                  '${city?.name ?? "—"} → ${loc?.name ?? "—"}${region != null ? " · регион: ${region.name}" : ""}',
-              onEdit: () => _editPark(db, p),
-              onDelete: () => _deletePark(db, p),
-            );
-          }).toList(),
-        ),
-      ]),
-    );
-  }
-
-  Widget _dirBlock({
-    required String title,
-    required IconData icon,
-    required int count,
-    required VoidCallback onAdd,
-    required List<Widget> children,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.panel2,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-            child: Row(children: [
-              Icon(icon, size: 14, color: AppColors.mut),
-              const SizedBox(width: 8),
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 12.5, fontWeight: FontWeight.w600)),
-              const SizedBox(width: 6),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-                decoration: BoxDecoration(
-                  color: AppColors.panel,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-                child: Text('$count',
-                    style: const TextStyle(
-                        fontSize: 10, color: AppColors.dim)),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.add, size: 16),
-                color: AppColors.amb,
-                padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 28, minHeight: 28),
-                onPressed: onAdd,
-              ),
-            ]),
-          ),
-          if (children.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 0, 12, 10),
-              child: Text('Пусто',
-                  style: TextStyle(fontSize: 11, color: AppColors.dim)),
-            )
-          else
-            ...children,
-        ],
-      ),
-    );
-  }
-
-  Widget _dirRow({
-    required String label,
-    required String subtitle,
-    required VoidCallback onEdit,
-    required VoidCallback onDelete,
-  }) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Color(0x14FFFFFF))),
-      ),
-      child: Row(children: [
-        Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis),
-                Text(subtitle,
-                    style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.dim),
-                    overflow: TextOverflow.ellipsis),
-              ]),
-        ),
-        IconButton(
-          icon: const Icon(Icons.edit_outlined, size: 14),
-          color: AppColors.mut,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          onPressed: onEdit,
-        ),
-        IconButton(
-          icon: const Icon(Icons.delete_outline, size: 14),
-          color: AppColors.red,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          onPressed: onDelete,
-        ),
-      ]),
-    );
-  }
-
-  // ═══════════════ regional view ═══════════════
+  // ═══════════ regional view ═══════════
 
   Widget _regionalView(AppDatabase db, ParkAdmin admin) {
-    final region =
-        admin.regionId == null ? null : db.regionById(admin.regionId);
+    final region = admin.regionId == null ? null : db.regionById(admin.regionId);
     if (region == null) {
       return _wrongRole('регионального администратора',
           'Не назначен регион. Обратитесь к super-админу.');
@@ -520,7 +317,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     ]);
   }
 
-  // ═══════════════ region card ═══════════════
+  // ═══════════ region card ═══════════
 
   Widget _regionCard(AppDatabase db, ParkAdmin admin, Region region,
       {bool isRegional = false}) {
@@ -531,8 +328,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: _cardDeco,
-      child:
-          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // Шапка региона
         InkWell(
           onTap: () => setState(() {
             if (expanded) {
@@ -555,8 +352,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                     children: [
                       Text(region.name,
                           style: const TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w700)),
+                              fontSize: 14.5, fontWeight: FontWeight.w700)),
                       const SizedBox(height: 2),
                       Text(
                         'Парков: ${region.parkIds.length}'
@@ -588,86 +384,140 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             ]),
           ),
         ),
+
+        // Дерево
         if (expanded) ...[
           const Divider(height: 1, color: AppColors.line),
           Padding(
             padding: const EdgeInsets.all(12),
-            child: hierarchy.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
-                      child: Text('В регионе нет парков',
-                          style: TextStyle(
-                              color: AppColors.dim, fontSize: 12)),
-                    ),
-                  )
-                : Column(
-                    children: hierarchy.entries.map((cityEntry) {
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (hierarchy.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      child: Center(
+                        child: Text('В регионе нет парков',
+                            style: TextStyle(
+                                color: AppColors.dim, fontSize: 12)),
+                      ),
+                    )
+                  else
+                    ...hierarchy.entries.map((cityEntry) {
                       final city = cityEntry.key;
                       final locs = cityEntry.value;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(
-                                top: 4, bottom: 6, left: 4),
-                            child: Row(children: [
-                              const Icon(Icons.location_city,
-                                  size: 14, color: AppColors.cyn),
-                              const SizedBox(width: 6),
-                              Text(city.name,
-                                  style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.cyn)),
-                            ]),
-                          ),
-                          ...locs.entries.map((locEntry) {
-                            final loc = locEntry.key;
-                            final parksInLoc = locEntry.value;
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.only(left: 20, bottom: 4),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                        top: 4, bottom: 6),
-                                    child: Row(children: [
-                                      const Icon(Icons.place_outlined,
-                                          size: 12, color: AppColors.dim),
-                                      const SizedBox(width: 6),
-                                      Text(loc.name,
-                                          style: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.mut)),
-                                    ]),
-                                  ),
-                                  ...parksInLoc.map((p) => Padding(
-                                        padding: const EdgeInsets.only(
-                                            left: 18),
-                                        child: _parkRow(db, p),
-                                      )),
-                                ],
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Заголовок города
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                  top: 4, bottom: 6, left: 4),
+                              child: Row(children: [
+                                const Icon(Icons.location_city,
+                                    size: 14, color: AppColors.cyn),
+                                const SizedBox(width: 6),
+                                Text(city.name,
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.cyn)),
+                              ]),
+                            ),
+                            ...locs.entries.map((locEntry) {
+                              final loc = locEntry.key;
+                              final parksInLoc = locEntry.value;
+                              return Padding(
+                                padding: const EdgeInsets.only(
+                                    left: 20, bottom: 6),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                          top: 4, bottom: 6),
+                                      child: Row(children: [
+                                        const Icon(Icons.place_outlined,
+                                            size: 12,
+                                            color: AppColors.dim),
+                                        const SizedBox(width: 6),
+                                        Text(loc.name,
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppColors.mut)),
+                                      ]),
+                                    ),
+                                    ...parksInLoc.map((p) => Padding(
+                                          padding: const EdgeInsets.only(
+                                              left: 18),
+                                          child: _parkRow(db, p),
+                                        )),
+                                    // + Парк
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(left: 18),
+                                      child: _addButton(
+                                        label: '+ Парк',
+                                        onTap: () => _createParkInRegion(
+                                            db, region, city, loc),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                            // + Локация
+                            Padding(
+                              padding: const EdgeInsets.only(left: 20),
+                              child: _addButton(
+                                label: '+ Локация',
+                                onTap: () =>
+                                    _createLocationChain(db, region, city),
                               ),
-                            );
-                          }),
-                        ],
+                            ),
+                          ],
+                        ),
                       );
-                    }).toList(),
+                    }),
+                  // + Город
+                  _addButton(
+                    label: '+ Город в регион',
+                    onTap: () => _createCityChain(db, region),
                   ),
+                ]),
           ),
         ],
       ]),
     );
   }
 
+  Widget _addButton({required String label, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.add_circle_outline, size: 14, color: AppColors.amb),
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.amb2,
+                  fontWeight: FontWeight.w600)),
+        ]),
+      ),
+    );
+  }
+
   Widget _parkRow(AppDatabase db, Park p) {
     final parkAdmins = db.parkAdminsOf(p.id);
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF0E1420),
@@ -710,7 +560,221 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
   }
 
-  // ═══════════════ region dialogs ═══════════════
+  // ═══════════ chain creation ═══════════
+
+  /// + Город в регион → создаёт город + локацию + парк, привязанный к региону
+  Future<void> _createCityChain(AppDatabase db, Region region) async {
+    final cityCtrl = TextEditingController();
+    final locCtrl = TextEditingController();
+    final parkCtrl = TextEditingController();
+
+    cityCtrl.addListener(() {
+      if (locCtrl.text.isEmpty || locCtrl.text == cityCtrl.text) {
+        locCtrl.text = cityCtrl.text;
+      }
+      if (parkCtrl.text.isEmpty || parkCtrl.text == cityCtrl.text) {
+        parkCtrl.text = cityCtrl.text;
+      }
+    });
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Новый город в регион'),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text(
+              'Создаётся цепочка: город → локация → парк. Парк сразу привязывается к региону.',
+              style: TextStyle(fontSize: 11, color: AppColors.dim),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: cityCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  labelText: 'Город *', hintText: 'Химки'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: locCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Локация *', hintText: 'Парк Химки'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: parkCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Парк *', hintText: 'Звёздный'),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Создать'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final cityName = cityCtrl.text.trim();
+    final locName = locCtrl.text.trim();
+    final parkName = parkCtrl.text.trim();
+    if (cityName.isEmpty || locName.isEmpty || parkName.isEmpty) {
+      _snack('Заполните все поля');
+      return;
+    }
+
+    // Найти или создать город
+    var city = db.cities.firstWhere(
+      (c) => c.name.toLowerCase() == cityName.toLowerCase(),
+      orElse: () => City(id: '', name: ''),
+    );
+    if (city.id.isEmpty) {
+      city = City(id: _uid(), name: cityName);
+      db.cities.add(city);
+    }
+    // Найти или создать локацию в этом городе
+    var loc = db.locations.firstWhere(
+      (l) => l.cityId == city.id &&
+          l.name.toLowerCase() == locName.toLowerCase(),
+      orElse: () => ParkLocation(id: '', cityId: '', name: ''),
+    );
+    if (loc.id.isEmpty) {
+      loc = ParkLocation(id: _uid(), cityId: city.id, name: locName);
+      db.locations.add(loc);
+    }
+    // Создать парк
+    final park = Park(id: _uid(), locId: loc.id, name: parkName);
+    db.parks.add(park);
+    db.addParkToRegion(region.id, park.id);
+    await db.save();
+    if (!mounted) return;
+    _snack('Создано: $cityName → $locName → $parkName');
+  }
+
+  /// + Локация у города → создаёт локацию + парк
+  Future<void> _createLocationChain(
+      AppDatabase db, Region region, City city) async {
+    final locCtrl = TextEditingController();
+    final parkCtrl = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: Text('Новая локация · ${city.name}'),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text(
+              'Создаётся локация + парк. Парк сразу привязывается к региону.',
+              style: TextStyle(fontSize: 11, color: AppColors.dim),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: locCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  labelText: 'Локация *', hintText: 'Парк Горького'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: parkCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Парк *', hintText: 'Аттракционы «Солнышко»'),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Создать'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final locName = locCtrl.text.trim();
+    final parkName = parkCtrl.text.trim();
+    if (locName.isEmpty || parkName.isEmpty) {
+      _snack('Заполните все поля');
+      return;
+    }
+
+    var loc = db.locations.firstWhere(
+      (l) => l.cityId == city.id &&
+          l.name.toLowerCase() == locName.toLowerCase(),
+      orElse: () => ParkLocation(id: '', cityId: '', name: ''),
+    );
+    if (loc.id.isEmpty) {
+      loc = ParkLocation(id: _uid(), cityId: city.id, name: locName);
+      db.locations.add(loc);
+    }
+    final park = Park(id: _uid(), locId: loc.id, name: parkName);
+    db.parks.add(park);
+    db.addParkToRegion(region.id, park.id);
+    await db.save();
+    if (!mounted) return;
+    _snack('Создано: $locName → $parkName');
+  }
+
+  /// + Парк у локации → создаёт парк и привязывает к региону
+  Future<void> _createParkInRegion(AppDatabase db, Region region, City city,
+      ParkLocation loc) async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: Text('Новый парк · ${loc.name}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+              labelText: 'Название парка *',
+              hintText: 'Аттракционы «Радуга»'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Создать'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final name = ctrl.text.trim();
+    if (name.isEmpty) return;
+    final park = Park(id: _uid(), locId: loc.id, name: name);
+    db.parks.add(park);
+    db.addParkToRegion(region.id, park.id);
+    await db.save();
+    if (!mounted) return;
+    _snack('Парк создан: $name');
+  }
+
+  // ═══════════ region dialogs ═══════════
 
   Future<void> _openRegionDialog(
       AppDatabase db, ParkAdmin admin, Region? editing) async {
@@ -745,14 +809,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                             fontSize: 12, color: AppColors.mut)),
                     const SizedBox(height: 6),
                     if (db.parks.isEmpty)
-                      const Text('Нет парков — создайте в «Справочниках»',
+                      const Text(
+                          'Нет парков — создайте через «+ Город» в дереве',
                           style: TextStyle(
                               fontSize: 11, color: AppColors.dim))
                     else
                       ...db.parks.map((p) {
                         final loc = db.locById(p.locId);
-                        final city =
-                            loc == null ? null : db.cityById(loc.cityId);
+                        final city = loc == null
+                            ? null
+                            : db.cityById(loc.cityId);
                         final otherRegion = db
                             .regionsOfPark(p.id)
                             .where((r) => r.id != editing?.id)
@@ -889,7 +955,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     _snack('Парк добавлен в регион');
   }
 
-  // ═══════════════ admin assignment ═══════════════
+  // ═══════════ admin assignment ═══════════
 
   Future<void> _openRegionalAdminDialog(
       AppDatabase db, Region region) async {
@@ -966,8 +1032,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     setState(() {});
   }
 
-  Future<void> _assignAdminToRegion(
-      AppDatabase db, Region region) async {
+  Future<void> _assignAdminToRegion(AppDatabase db, Region region) async {
     final candidates = db.admins.where((a) {
       if (!a.active) return false;
       if (a.regionId == region.id) return false;
@@ -1173,14 +1238,15 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
               children: [
                 Text(
                   'Город: $cityName. Показаны админы из этого города и свободные.',
-                  style:
-                      const TextStyle(fontSize: 11, color: AppColors.dim),
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.dim),
                 ),
                 const SizedBox(height: 12),
                 if (candidates.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Text('Нет подходящих админов. Создайте нового.',
+                    child: Text(
+                        'Нет подходящих админов. Создайте нового.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             fontSize: 12, color: AppColors.dim)),
@@ -1188,8 +1254,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                 else
                   ...candidates.map((a) {
                     final city = db.cityOfAdmin(a);
-                    final curPark =
-                        a.parkId == null ? null : db.parkById(a.parkId);
+                    final curPark = a.parkId == null
+                        ? null
+                        : db.parkById(a.parkId);
                     return Container(
                       margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.all(10),
@@ -1221,6 +1288,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                           onPressed: () {
                             a.parkId = park.id;
                             a.role = AdminRole.parkAdmin;
+                            a.regionId = null;
                             db.save();
                             Navigator.pop(ctx);
                             _snack('Назначен: ${a.name}');
@@ -1321,428 +1389,14 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       parkId: parkId,
     ));
     await db.save();
+    DebugLog.instance.info(
+        'admin created: $name (${isRegional ? "regional" : "park"})');
     if (!mounted) return;
     _snack('Админ создан');
     setState(() {});
   }
 
-  // ═══════════════ инфраструктура (быстрое создание) ═══════════════
-
-  Future<void> _createCity(AppDatabase db) async {
-    final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        title: const Text('Новый город'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-              labelText: 'Название города', hintText: 'Москва'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: AppColors.amb,
-                foregroundColor: const Color(0xFF1C1204)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Создать'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final name = ctrl.text.trim();
-    if (name.isEmpty) return;
-    db.cities.add(City(id: _uid(), name: name));
-    await db.save();
-    _snack('Город создан');
-  }
-
-  Future<void> _editCity(AppDatabase db, City c) async {
-    final ctrl = TextEditingController(text: c.name);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        title: const Text('Редактировать город'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Название города'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: AppColors.amb,
-                foregroundColor: const Color(0xFF1C1204)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final name = ctrl.text.trim();
-    if (name.isEmpty) return;
-    c.name = name;
-    await db.save();
-    _snack('Сохранено');
-  }
-
-  Future<void> _deleteCity(AppDatabase db, City c) async {
-    final locs =
-        db.locations.where((l) => l.cityId == c.id).map((l) => l.id).toSet();
-    final parks =
-        db.parks.where((p) => locs.contains(p.locId)).map((p) => p.id).toSet();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        title: Text('Удалить город «${c.name}»?'),
-        content: Text(
-          'Будут удалены локации (${locs.length}) и парки (${parks.length}).',
-          style: const TextStyle(fontSize: 13, color: AppColors.mut),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final rideIds = db.rides
-        .where((r) => parks.contains(r.parkId))
-        .map((r) => r.id)
-        .toSet();
-    db.incidents.removeWhere((i) => rideIds.contains(i.rideId));
-    db.downtimes.removeWhere((d) => rideIds.contains(d.rideId));
-    db.rides.removeWhere((r) => parks.contains(r.parkId));
-    db.parks.removeWhere((p) => locs.contains(p.locId));
-    db.locations.removeWhere((l) => l.cityId == c.id);
-    db.cities.removeWhere((x) => x.id == c.id);
-    for (final r in db.regions) {
-      r.parkIds.removeWhere(parks.contains);
-    }
-    await db.save();
-    _snack('Город удалён');
-  }
-
-  Future<void> _createLocation(AppDatabase db) async {
-    if (db.cities.isEmpty) {
-      _snack('Сначала создайте город');
-      return;
-    }
-    String? cityId = db.cities.first.id;
-    final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: const Text('Новая локация'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            DropdownButtonFormField<String>(
-              initialValue: cityId,
-              decoration: const InputDecoration(labelText: 'Город'),
-              isExpanded: true,
-              items: [
-                for (final c in db.cities)
-                  DropdownMenuItem(value: c.id, child: Text(c.name)),
-              ],
-              onChanged: (v) => setS(() => cityId = v),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Название локации', hintText: 'ВДНХ'),
-            ),
-          ]),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Создать'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || cityId == null) return;
-    final cid = cityId!;
-    final name = ctrl.text.trim();
-    if (name.isEmpty) return;
-    db.locations.add(ParkLocation(id: _uid(), cityId: cid, name: name));
-    await db.save();
-    _snack('Локация создана');
-  }
-
-  Future<void> _editLocation(AppDatabase db, ParkLocation l) async {
-    String? cityId = l.cityId;
-    final ctrl = TextEditingController(text: l.name);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: const Text('Редактировать локацию'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            DropdownButtonFormField<String>(
-              initialValue: cityId,
-              decoration: const InputDecoration(labelText: 'Город'),
-              isExpanded: true,
-              items: [
-                for (final c in db.cities)
-                  DropdownMenuItem(value: c.id, child: Text(c.name)),
-              ],
-              onChanged: (v) => setS(() => cityId = v),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Название'),
-            ),
-          ]),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Сохранить'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || cityId == null) return;
-    final name = ctrl.text.trim();
-    if (name.isEmpty) return;
-    l.name = name;
-    l.cityId = cityId!;
-    await db.save();
-    _snack('Сохранено');
-  }
-
-  Future<void> _deleteLocation(AppDatabase db, ParkLocation l) async {
-    final parks =
-        db.parks.where((p) => p.locId == l.id).map((p) => p.id).toSet();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        title: Text('Удалить локацию «${l.name}»?'),
-        content: Text('Будут удалены парки (${parks.length}).',
-            style: const TextStyle(fontSize: 13, color: AppColors.mut)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final rideIds = db.rides
-        .where((r) => parks.contains(r.parkId))
-        .map((r) => r.id)
-        .toSet();
-    db.incidents.removeWhere((i) => rideIds.contains(i.rideId));
-    db.downtimes.removeWhere((d) => rideIds.contains(d.rideId));
-    db.rides.removeWhere((r) => parks.contains(r.parkId));
-    db.parks.removeWhere((p) => p.locId == l.id);
-    db.locations.removeWhere((x) => x.id == l.id);
-    for (final r in db.regions) {
-      r.parkIds.removeWhere(parks.contains);
-    }
-    await db.save();
-    _snack('Локация удалена');
-  }
-
-  Future<void> _createPark(AppDatabase db) async {
-    if (db.locations.isEmpty) {
-      _snack('Сначала создайте локацию');
-      return;
-    }
-    String? locId = db.locations.first.id;
-    final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: const Text('Новый парк'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            DropdownButtonFormField<String>(
-              initialValue: locId,
-              decoration: const InputDecoration(labelText: 'Локация'),
-              isExpanded: true,
-              items: [
-                for (final c in db.cities) ...[
-                  for (final l
-                      in db.locations.where((l) => l.cityId == c.id))
-                    DropdownMenuItem(
-                      value: l.id,
-                      child: Text('${c.name} · ${l.name}',
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-              ],
-              onChanged: (v) => setS(() => locId = v),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Название парка', hintText: 'Парк Чудес'),
-            ),
-          ]),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Создать'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || locId == null) return;
-    final lid = locId!;
-    final name = ctrl.text.trim();
-    if (name.isEmpty) return;
-    db.parks.add(Park(id: _uid(), locId: lid, name: name));
-    await db.save();
-    _snack('Парк создан');
-  }
-
-  Future<void> _editPark(AppDatabase db, Park p) async {
-    String? locId = p.locId;
-    final ctrl = TextEditingController(text: p.name);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: const Text('Редактировать парк'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            DropdownButtonFormField<String>(
-              initialValue: locId,
-              decoration: const InputDecoration(labelText: 'Локация'),
-              isExpanded: true,
-              items: [
-                for (final c in db.cities) ...[
-                  for (final l
-                      in db.locations.where((l) => l.cityId == c.id))
-                    DropdownMenuItem(
-                      value: l.id,
-                      child: Text('${c.name} · ${l.name}',
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-              ],
-              onChanged: (v) => setS(() => locId = v),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Название'),
-            ),
-          ]),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Сохранить'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || locId == null) return;
-    final name = ctrl.text.trim();
-    if (name.isEmpty) return;
-    p.name = name;
-    p.locId = locId!;
-    await db.save();
-    _snack('Сохранено');
-  }
-
-  Future<void> _deletePark(AppDatabase db, Park p) async {
-    final rideIds =
-        db.rides.where((r) => r.parkId == p.id).map((r) => r.id).toSet();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        title: Text('Удалить парк «${p.name}»?'),
-        content: Text('Будут удалены аттракционы (${rideIds.length}).',
-            style: const TextStyle(fontSize: 13, color: AppColors.mut)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    db.incidents.removeWhere((i) => rideIds.contains(i.rideId));
-    db.downtimes.removeWhere((d) => rideIds.contains(d.rideId));
-    db.rides.removeWhere((r) => r.parkId == p.id);
-    db.parks.removeWhere((x) => x.id == p.id);
-    for (final r in db.regions) {
-      r.parkIds.remove(p.id);
-    }
-    await db.save();
-    _snack('Парк удалён');
-  }
-
-  // ═══════════════ helpers ═══════════════
+  // ═══════════ helpers ═══════════
 
   Widget _primaryBtn({
     required IconData icon,
@@ -1767,33 +1421,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF1C1204))),
-        ]),
-      ),
-    );
-  }
-
-  Widget _smallBtn({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(11),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: AppColors.line2),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 15, color: AppColors.mut),
-          const SizedBox(width: 6),
-          Text(label,
-              style: const TextStyle(
-                  fontSize: 12.5,
-                  color: AppColors.mut,
-                  fontWeight: FontWeight.w600)),
         ]),
       ),
     );
@@ -1837,12 +1464,3 @@ final _cardDeco = BoxDecoration(
   border: Border.all(color: AppColors.line),
   borderRadius: BorderRadius.circular(14),
 );
-
-extension _FirstWhereOrNull<E> on Iterable<E> {
-  E? firstWhereOrNull(bool Function(E) test) {
-    for (final e in this) {
-      if (test(e)) return e;
-    }
-    return null;
-  }
-}
