@@ -7,9 +7,9 @@ import '../data/nfc_helper.dart';
 import '../models/models.dart';
 import '../models/employee.dart';
 import '../models/region.dart';
-import '../theme.dart';
 import '../models/operator_park_link.dart';
 import '../models/shift_vacancy.dart';
+import '../theme.dart';
 
 class AdminPersonnelTab extends StatefulWidget {
   final AppDatabase db;
@@ -41,7 +41,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   AppDatabase get db => widget.db;
   Employee get me => widget.currentAdmin;
 
-  // ═══════════ фильтры и данные ═══════════
+  // ═══════════ фильтры ═══════════
 
   List<Region> get _visibleRegions {
     if (me.role == EmployeeRole.superAdmin) return db.regions;
@@ -170,6 +170,21 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         return [city?.name, p.name].where((x) => x != null).join(' · ');
       }
     }
+    // У operator проверяем links
+    if (e.role == EmployeeRole.operator) {
+      final links = db
+          .linksForOperator(e.id)
+          .where((l) => l.status == LinkStatus.approved)
+          .toList();
+      if (links.isNotEmpty) {
+        final p = db.parkById(links.first.parkId);
+        if (p != null) {
+          final loc = db.locById(p.locId);
+          final city = loc == null ? null : db.cityById(loc.cityId);
+          return [city?.name, p.name].where((x) => x != null).join(' · ');
+        }
+      }
+    }
     if (e.lastCityId != null) {
       final c = db.cityById(e.lastCityId);
       return c == null ? 'Свободен' : 'Свободен · ${c.name}';
@@ -182,6 +197,18 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     if (me.role == EmployeeRole.superAdmin) return true;
     if (e.role == EmployeeRole.superAdmin) return false;
     return true;
+  }
+
+  bool _hasWorkplace(Employee e) {
+    if (e.role == EmployeeRole.superAdmin) return false;
+    if (e.regionId != null) return true;
+    if (e.parkId != null) return true;
+    if (e.role == EmployeeRole.operator) {
+      return db
+          .linksForOperator(e.id)
+          .any((l) => l.status == LinkStatus.approved);
+    }
+    return false;
   }
 
   // ═══════════ build ═══════════
@@ -401,8 +428,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         }),
     ]);
   }
-
-  // ═══════════ строка сотрудника ═══════════
 
   Widget _employeeRow(Employee e) {
     final color = Color(e.status.colorValue);
@@ -655,7 +680,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   Widget _infoSection(Employee e, bool canManage, StateSetter setS) {
     final region = _regionOf(e);
     final city = _cityOf(e);
-    final park = e.parkId == null ? null : db.parkById(e.parkId);
+    final park = _parkOf(e);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -793,8 +818,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
   }
 
-  // ═══════════ статистика ═══════════
-
   Widget _statsSection(Employee e) {
     final stats = <_StatItem>[];
 
@@ -822,9 +845,13 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             .where((d) => d.techId == e.id && d.end == null)
             .length;
         stats.add(_StatItem(
-            icon: Icons.warning_amber, label: 'инцидентов', value: '$incidents'));
+            icon: Icons.warning_amber,
+            label: 'инцидентов',
+            value: '$incidents'));
         stats.add(_StatItem(
-            icon: Icons.timer_outlined, label: 'простоев', value: '$downtimes'));
+            icon: Icons.timer_outlined,
+            label: 'простоев',
+            value: '$downtimes'));
         stats.add(_StatItem(
             icon: Icons.pause_circle_outline,
             label: 'активных',
@@ -839,7 +866,9 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           stats.add(_StatItem(
               icon: Icons.people_outline, label: 'операторов', value: '$ops'));
           stats.add(_StatItem(
-              icon: Icons.attractions, label: 'аттракционов', value: '$rides'));
+              icon: Icons.attractions,
+              label: 'аттракционов',
+              value: '$rides'));
         }
         break;
       case EmployeeRole.regionalAdmin:
@@ -908,6 +937,13 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   // ═══════════ действия ═══════════
 
   Widget _actionsGrid(Employee e, StateSetter setS) {
+    final hasWorkplace = _hasWorkplace(e);
+    final roleChanges = _allowedRoleChanges(e);
+    final canChangeWorkplace = e.role == EmployeeRole.regionalAdmin ||
+        e.role == EmployeeRole.parkAdmin ||
+        e.role == EmployeeRole.technician ||
+        e.role == EmployeeRole.operator;
+
     final buttons = <Widget>[
       _actionBtn(
         icon: Icons.key,
@@ -919,12 +955,27 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         label: 'Статус',
         onTap: () => _changeStatus(e, setS),
       ),
-      _actionBtn(
-        icon: Icons.move_up,
-        label: 'Сменить место',
-        color: AppColors.cyn,
-        onTap: () => _changeWorkplace(e, setS),
-      ),
+      if (canChangeWorkplace && hasWorkplace)
+        _actionBtn(
+          icon: Icons.move_up,
+          label: 'Сменить место',
+          color: AppColors.cyn,
+          onTap: () => _changeWorkplace(e, setS),
+        ),
+      if (roleChanges.isNotEmpty)
+        _actionBtn(
+          icon: Icons.swap_horiz,
+          label: 'Сменить роль',
+          color: AppColors.pur,
+          onTap: () => _changeRole(e, setS),
+        ),
+      if (hasWorkplace)
+        _actionBtn(
+          icon: Icons.link_off,
+          label: 'Отвязать',
+          color: AppColors.org,
+          onTap: () => _detachWorkplace(e, setS),
+        ),
       if (e.status != EmployeeStatus.fired)
         _actionBtn(
           icon: Icons.person_off,
@@ -972,57 +1023,274 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
   }
 
-  // ═══════════ звонок ═══════════
+  // ═══════════ смена роли ═══════════
 
-  Future<void> _callPhone(String phone) async {
-    final cleaned = phone.replaceAll(RegExp(r'[^\d+]'), '');
-    final uri = Uri.parse('tel:$cleaned');
-    try {
-      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) {
-        _snack('Не удалось открыть приложение звонка');
+  List<EmployeeRole> _allowedRoleChanges(Employee e) {
+    final list = <EmployeeRole>[];
+    if (e.id == me.id) return list;
+    if (e.role == EmployeeRole.superAdmin) return list;
+    if (e.role == EmployeeRole.regionalAdmin) return list;
+
+    if (me.role == EmployeeRole.superAdmin) {
+      if (e.role == EmployeeRole.operator) {
+        list.addAll([EmployeeRole.technician, EmployeeRole.parkAdmin]);
+      } else if (e.role == EmployeeRole.technician) {
+        list.addAll([EmployeeRole.operator, EmployeeRole.parkAdmin]);
+      } else if (e.role == EmployeeRole.parkAdmin) {
+        list.addAll([EmployeeRole.operator, EmployeeRole.technician]);
       }
-    } catch (e) {
-      _snack('Ошибка: $e');
+    } else if (me.role == EmployeeRole.regionalAdmin) {
+      if (e.role == EmployeeRole.operator) {
+        list.add(EmployeeRole.technician);
+      } else if (e.role == EmployeeRole.technician) {
+        list.add(EmployeeRole.operator);
+      }
     }
+    return list;
   }
 
-  // ═══════════ редактирование ФИО / телефон / должности ═══════════
+  Future<void> _changeRole(Employee e, StateSetter setS) async {
+    final allowed = _allowedRoleChanges(e);
+    if (allowed.isEmpty) {
+      _snack('Нельзя сменить роль');
+      return;
+    }
 
-  Future<void> _editEmployee(Employee e, StateSetter setS) async {
-    final nameCtrl = TextEditingController(text: e.name);
-    final phoneCtrl = TextEditingController(text: e.phone);
-    final jobCtrl = TextEditingController(text: e.jobTitle ?? '');
+    EmployeeRole selected = allowed.first;
 
+    // Шаг 1: выбор новой роли
+    final ok = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS2) => AlertDialog(
+          backgroundColor: AppColors.panel,
+          title: Text('Сменить роль · ${e.name}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Сейчас: ${e.role.label}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.dim)),
+              const SizedBox(height: 12),
+              for (final r in allowed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: InkWell(
+                    onTap: () => setS2(() => selected = r),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected == r
+                            ? AppColors.pur.withValues(alpha: 0.12)
+                            : Colors.transparent,
+                        border: Border.all(
+                            color: selected == r
+                                ? AppColors.pur.withValues(alpha: 0.4)
+                                : AppColors.line2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(children: [
+                        Icon(
+                            selected == r
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            size: 18,
+                            color: selected == r
+                                ? AppColors.pur
+                                : AppColors.dim),
+                        const SizedBox(width: 10),
+                        Text(r.label,
+                            style: const TextStyle(fontSize: 13)),
+                      ]),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Отмена')),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.amb,
+                  foregroundColor: const Color(0xFF1C1204)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Далее'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+
+    // Шаг 2: выбор парка
+    final parkId = await _pickPark(e);
+    if (parkId == null) return;
+
+    final now = DateTime.now();
+    final oldRole = e.role;
+
+    for (final h in e.history) {
+      if (h.isCurrent) {
+        h.endedAt = now;
+        h.reason = 'Смена роли: ${oldRole.label} → ${selected.label}';
+      }
+    }
+
+    // Если был operator — почистить links
+    if (oldRole == EmployeeRole.operator) {
+      for (final l in db.linksForOperator(e.id).toList()) {
+        l.status = LinkStatus.rejected;
+      }
+    }
+
+    e.role = selected;
+    e.status = EmployeeStatus.active;
+    e.statusChangedAt = now;
+    e.regionId = null;
+
+    if (selected == EmployeeRole.operator) {
+      e.parkId = null;
+      db.createLinkRequest(e.id, parkId, initiatorAdminId: me.id);
+      final created = db
+          .linksForOperator(e.id)
+          .firstWhere((l) => l.parkId == parkId);
+      db.approveLink(created.id, me.id);
+    } else {
+      e.parkId = parkId;
+    }
+
+    final park = db.parkById(parkId);
+    if (park != null) {
+      final loc = db.locById(park.locId);
+      if (loc != null) e.lastCityId = loc.cityId;
+    }
+
+    e.history.add(RoleHistoryEntry(
+      id: _uid(),
+      role: selected,
+      parkId: parkId,
+      startedAt: now,
+    ));
+
+    await db.save();
+    setS(() {});
+    _snack('Роль изменена на ${selected.label}');
+  }
+
+  Future<String?> _pickPark(Employee e) async {
+    final cities = List<City>.from(db.cities)
+      ..sort((a, b) => a.name.compareTo(b.name));
+    if (cities.isEmpty) {
+      _snack('В базе нет городов');
+      return null;
+    }
+
+    String? cityId = _cityOf(e)?.id ?? cities.first.id;
+    String? parkId = e.parkId;
+
+    return showDialog<String>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS2) {
+          final locs = db.locations
+              .where((l) => l.cityId == cityId)
+              .toList();
+          final parks = <Park>[];
+          for (final l in locs) {
+            parks.addAll(db.parks.where((p) => p.locId == l.id));
+          }
+          if (parkId == null || !parks.any((p) => p.id == parkId)) {
+            parkId = parks.isEmpty ? null : parks.first.id;
+          }
+
+          return AlertDialog(
+            backgroundColor: AppColors.panel,
+            title: const Text('Выберите парк'),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: cityId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Город'),
+                    items: [
+                      for (final c in cities)
+                        DropdownMenuItem(value: c.id, child: Text(c.name)),
+                    ],
+                    onChanged: (v) => setS2(() {
+                      cityId = v;
+                      parkId = null;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+                  if (parks.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('В этом городе нет парков',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.amb)),
+                    )
+                  else
+                    DropdownButtonFormField<String>(
+                      initialValue: parkId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Парк'),
+                      items: [
+                        for (final p in parks)
+                          DropdownMenuItem(
+                              value: p.id, child: Text(p.name)),
+                      ],
+                      onChanged: (v) => setS2(() => parkId = v),
+                    ),
+                ]),
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Отмена')),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.amb,
+                    foregroundColor: const Color(0xFF1C1204)),
+                onPressed: () {
+                  if (parkId == null) {
+                    _snack('Выберите парк');
+                    return;
+                  }
+                  Navigator.pop(ctx, parkId);
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // ═══════════ отвязать от парка ═══════════
+
+  Future<void> _detachWorkplace(Employee e, StateSetter setS) async {
     final ok = await showDialog<bool>(
       context: context,
       useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
-        title: const Text('Редактировать'),
-        content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: nameCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'ФИО *'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: phoneCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                  labelText: 'Телефон', hintText: '+7 900 000-00-00'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: jobCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Должность',
-                  hintText: 'Старший механик, Оператор…'),
-            ),
-          ]),
+        title: const Text('Отвязать от парка?'),
+        content: Text(
+          '${e.name} станет «свободным» — без привязки к парку. Роль (${e.role.label}) сохранится. В историю добавится запись.',
+          style: const TextStyle(fontSize: 13, color: AppColors.mut),
         ),
         actions: [
           TextButton(
@@ -1033,24 +1301,41 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 backgroundColor: AppColors.amb,
                 foregroundColor: const Color(0xFF1C1204)),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Сохранить'),
+            child: const Text('Отвязать'),
           ),
         ],
       ),
     );
     if (ok != true) return;
 
-    final name = nameCtrl.text.trim();
-    if (name.isEmpty) {
-      _snack('Укажите ФИО');
-      return;
+    final now = DateTime.now();
+    for (final h in e.history) {
+      if (h.isCurrent) {
+        h.endedAt = now;
+        h.reason = 'Отвязан от парка';
+      }
     }
-    e.name = name;
-    e.phone = phoneCtrl.text.trim();
-    e.jobTitle = jobCtrl.text.trim().isEmpty ? null : jobCtrl.text.trim();
+
+    if (e.role == EmployeeRole.operator) {
+      for (final l in db.linksForOperator(e.id).toList()) {
+        l.status = LinkStatus.rejected;
+      }
+    }
+
+    e.parkId = null;
+    e.regionId = null;
+    e.status = EmployeeStatus.active;
+    e.statusChangedAt = now;
+
+    e.history.add(RoleHistoryEntry(
+      id: _uid(),
+      role: e.role,
+      startedAt: now,
+    ));
+
     await db.save();
     setS(() {});
-    _snack('Сохранено');
+    _snack('${e.name} отвязан от парка');
   }
 
   // ═══════════ смена места работы ═══════════
@@ -1060,13 +1345,11 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       _snack('Super-админ не привязан к парку');
       return;
     }
-
     if (e.role == EmployeeRole.regionalAdmin) {
       await _changeRegion(e, setS);
       return;
     }
 
-    // Парк
     if (db.parks.isEmpty) {
       _snack('В базе нет парков');
       return;
@@ -1081,6 +1364,13 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
     String? cityId = _cityOf(e)?.id ?? cities.first.id;
     String? parkId = e.parkId;
+    if (parkId == null && e.role == EmployeeRole.operator) {
+      final links = db
+          .linksForOperator(e.id)
+          .where((l) => l.status == LinkStatus.approved)
+          .toList();
+      if (links.isNotEmpty) parkId = links.first.parkId;
+    }
 
     final result = await showDialog<String>(
       context: context,
@@ -1167,27 +1457,41 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
     if (result == null) return;
     final newParkId = result;
-    if (newParkId == e.parkId) {
+
+    final now = DateTime.now();
+    final isSameOperatorPark = e.role == EmployeeRole.operator &&
+        db
+            .linksForOperator(e.id)
+            .any((l) =>
+                l.parkId == newParkId && l.status == LinkStatus.approved);
+    final isSame = e.parkId == newParkId || isSameOperatorPark;
+    if (isSame) {
       _snack('Уже работает здесь');
       return;
     }
 
-    final now = DateTime.now();
-    // Закрыть активные записи
     for (final h in e.history) {
       if (h.isCurrent) {
         h.endedAt = now;
         h.reason = 'Переведён в другой парк';
       }
     }
-    // Новая запись
-    e.history.add(RoleHistoryEntry(
-      id: _uid(),
-      role: e.role,
-      parkId: newParkId,
-      startedAt: now,
-    ));
-    e.parkId = newParkId;
+
+    if (e.role == EmployeeRole.operator) {
+      for (final l in db.linksForOperator(e.id).toList()) {
+        if (l.status == LinkStatus.approved) {
+          l.status = LinkStatus.rejected;
+        }
+      }
+      db.createLinkRequest(e.id, newParkId, initiatorAdminId: me.id);
+      final created = db
+          .linksForOperator(e.id)
+          .firstWhere((l) => l.parkId == newParkId);
+      db.approveLink(created.id, me.id);
+      e.parkId = null;
+    } else {
+      e.parkId = newParkId;
+    }
     e.regionId = null;
     e.status = EmployeeStatus.active;
     e.statusChangedAt = now;
@@ -1196,6 +1500,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       final loc = db.locById(park.locId);
       if (loc != null) e.lastCityId = loc.cityId;
     }
+
+    e.history.add(RoleHistoryEntry(
+      id: _uid(),
+      role: e.role,
+      parkId: newParkId,
+      startedAt: now,
+    ));
+
     await db.save();
     setS(() {});
     _snack('Переведён в ${park?.name ?? "парк"}');
@@ -1268,7 +1580,18 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     _snack('Переведён в регион');
   }
 
-  // ═══════════ PIN ═══════════
+  // ═══════════ звонок / PIN / статус / fire / delete ═══════════
+
+  Future<void> _callPhone(String phone) async {
+    final cleaned = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    final uri = Uri.parse('tel:$cleaned');
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) _snack('Не удалось открыть приложение звонка');
+    } catch (err) {
+      _snack('Ошибка: $err');
+    }
+  }
 
   Future<void> _changePin(Employee e, StateSetter setS) async {
     final ctrl = TextEditingController(text: e.pin);
@@ -1319,8 +1642,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     setS(() {});
     _snack('PIN изменён');
   }
-
-  // ═══════════ статус ═══════════
 
   Future<void> _changeStatus(Employee e, StateSetter setS) async {
     EmployeeStatus sel = e.status;
@@ -1415,6 +1736,11 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           h.reason = 'Уволен';
         }
       }
+      if (e.role == EmployeeRole.operator) {
+        for (final l in db.linksForOperator(e.id).toList()) {
+          l.status = LinkStatus.rejected;
+        }
+      }
     }
     await db.save();
     setS(() {});
@@ -1450,6 +1776,11 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       if (h.isCurrent) {
         h.endedAt = now;
         h.reason = 'Уволен';
+      }
+    }
+    if (e.role == EmployeeRole.operator) {
+      for (final l in db.linksForOperator(e.id).toList()) {
+        l.status = LinkStatus.rejected;
       }
     }
     e.status = EmployeeStatus.fired;
@@ -1489,6 +1820,72 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     await db.save();
     if (mounted) Navigator.of(context, rootNavigator: true).pop();
     _snack('Сотрудник удалён');
+  }
+
+  // ═══════════ редактирование ═══════════
+
+  Future<void> _editEmployee(Employee e, StateSetter setS) async {
+    final nameCtrl = TextEditingController(text: e.name);
+    final phoneCtrl = TextEditingController(text: e.phone);
+    final jobCtrl = TextEditingController(text: e.jobTitle ?? '');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Редактировать'),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'ФИО *'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                  labelText: 'Телефон', hintText: '+7 900 000-00-00'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: jobCtrl,
+              decoration: const InputDecoration(
+                  labelText: 'Должность',
+                  hintText: 'Старший механик, Оператор…'),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final name = nameCtrl.text.trim();
+    if (name.isEmpty) {
+      _snack('Укажите ФИО');
+      return;
+    }
+    e.name = name;
+    e.phone = phoneCtrl.text.trim();
+    e.jobTitle = jobCtrl.text.trim().isEmpty ? null : jobCtrl.text.trim();
+    await db.save();
+    setS(() {});
+    _snack('Сохранено');
   }
 
   // ═══════════ NFC ═══════════
@@ -1663,7 +2060,32 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         return loc == null ? null : db.cityById(loc.cityId);
       }
     }
+    if (e.role == EmployeeRole.operator) {
+      final links = db
+          .linksForOperator(e.id)
+          .where((l) => l.status == LinkStatus.approved)
+          .toList();
+      if (links.isNotEmpty) {
+        final p = db.parkById(links.first.parkId);
+        if (p != null) {
+          final loc = db.locById(p.locId);
+          return loc == null ? null : db.cityById(loc.cityId);
+        }
+      }
+    }
     if (e.lastCityId != null) return db.cityById(e.lastCityId);
+    return null;
+  }
+
+  Park? _parkOf(Employee e) {
+    if (e.parkId != null) return db.parkById(e.parkId);
+    if (e.role == EmployeeRole.operator) {
+      final links = db
+          .linksForOperator(e.id)
+          .where((l) => l.status == LinkStatus.approved)
+          .toList();
+      if (links.isNotEmpty) return db.parkById(links.first.parkId);
+    }
     return null;
   }
 
