@@ -9,6 +9,72 @@ Map<String, dynamic> buildSeed() {
   DateTime h(int n) => now.subtract(Duration(hours: n));
   DateTime d(int n) => now.subtract(Duration(days: n));
 
+  // ─── Генерация 20 операторов на каждый парк ───
+  final List<Employee> generatedOperators = [];
+  final List<OperatorParkLink> generatedLinks = [];
+
+  final firstNamesM = ['Алексей', 'Иван', 'Дмитрий', 'Сергей', 'Андрей', 'Михаил', 'Максим', 'Артем', 'Никита', 'Егор', 'Павел', 'Роман'];
+  final firstNamesF = ['Анна', 'Мария', 'Елена', 'Ольга', 'Наталья', 'Ирина', 'Татьяна', 'Светлана', 'Юлия', 'Екатерина'];
+  final lastNames = ['Смирнов', 'Иванов', 'Кузнецов', 'Попов', 'Васильев', 'Петров', 'Соколов', 'Михайлов', 'Новиков', 'Федоров', 'Морозов', 'Волков', 'Алексеев', 'Лебедев', 'Семенов', 'Егоров', 'Павлов', 'Козлов', 'Степанов', 'Николаев'];
+
+  int pinCounter = 1000;
+  
+  // Проходимся по всем 5 паркам
+  for (int p = 1; p <= 5; p++) {
+    for (int i = 1; i <= 20; i++) {
+      final opId = 'op_p${p}_$i';
+      final isFemale = i % 2 == 0;
+      final fName = isFemale 
+          ? firstNamesF[i % firstNamesF.length] 
+          : firstNamesM[i % firstNamesM.length];
+      final lName = lastNames[(p * i) % lastNames.length];
+      
+      final name = '$lName $fName';
+      final phone = '+7 900 ${p}00-${i.toString().padLeft(2, '0')}-${p.toString().padLeft(2, '0')}';
+      final pin = (pinCounter++).toString();
+      
+      // Определяем руководителя (админа парка)
+      String? mgr;
+      if (p == 1) mgr = 'adm2'; // Олег (Парк Чудес)
+      if (p == 2) mgr = 'adm3'; // Елена (Страна Мечты)
+      if (p > 2) mgr = 'adm1'; // Ирина (Региональный, т.к. админов парков 3-5 нет в сиде)
+
+      final createdAt = now.subtract(Duration(days: (p * i) % 120 + 10));
+
+      // Создаём оператора
+      generatedOperators.add(Employee(
+        id: opId,
+        name: name,
+        phone: phone,
+        pin: pin,
+        role: EmployeeRole.operator,
+        status: EmployeeStatus.active,
+        managerId: mgr,
+        createdAt: createdAt,
+        history: [
+          RoleHistoryEntry(
+            id: 'hist_$opId',
+            role: EmployeeRole.operator,
+            parkId: 'p$p',
+            startedAt: createdAt,
+          ),
+        ],
+      ));
+
+      // Сразу привязываем его к парку
+      generatedLinks.add(OperatorParkLink(
+        id: 'lnk_$opId',
+        operatorId: opId,
+        parkId: 'p$p',
+        status: LinkStatus.approved,
+        initiatorAdminId: mgr,
+        approverAdminId: mgr,
+        approvedAt: createdAt,
+      ));
+    }
+  }
+
+  // ─── Основной возвращаемый объект ───
   return {
     'cities': [
       City(id: 'c1', name: 'Москва'),
@@ -108,6 +174,7 @@ Map<String, dynamic> buildSeed() {
         role: EmployeeRole.regionalAdmin,
         regionId: 'reg1',
         jobTitle: 'Региональный директор',
+        managerId: 'adm0',
       ),
       // Park admins
       Employee(
@@ -117,6 +184,7 @@ Map<String, dynamic> buildSeed() {
         pin: '1000',
         role: EmployeeRole.parkAdmin,
         parkId: 'p1',
+        managerId: 'adm1',
       ),
       Employee(
         id: 'adm3',
@@ -125,14 +193,17 @@ Map<String, dynamic> buildSeed() {
         pin: '2000',
         role: EmployeeRole.parkAdmin,
         parkId: 'p2',
+        managerId: 'adm1',
       ),
-      // Operators
+      
+      // Старые операторы (для совместимости, они тоже попадут в парки)
       Employee(
         id: 'op1',
         name: 'Алексей Смирнов',
         phone: '+7 900 555-11-22',
         pin: '1111',
         role: EmployeeRole.operator,
+        managerId: 'adm2',
       ),
       Employee(
         id: 'op2',
@@ -140,6 +211,7 @@ Map<String, dynamic> buildSeed() {
         phone: '+7 900 555-33-44',
         pin: '2222',
         role: EmployeeRole.operator,
+        managerId: 'adm2',
       ),
       Employee(
         id: 'op3',
@@ -147,6 +219,7 @@ Map<String, dynamic> buildSeed() {
         phone: '+7 900 555-55-66',
         pin: '3333',
         role: EmployeeRole.operator,
+        managerId: 'adm3',
       ),
       Employee(
         id: 'op4',
@@ -154,8 +227,10 @@ Map<String, dynamic> buildSeed() {
         phone: '+7 900 555-77-88',
         pin: '4444',
         role: EmployeeRole.operator,
+        managerId: 'adm1',
       ),
-      // Technicians
+
+      // Технические специалисты
       Employee(
         id: 't1',
         name: 'Иванов Иван',
@@ -163,6 +238,7 @@ Map<String, dynamic> buildSeed() {
         pin: '0001',
         role: EmployeeRole.technician,
         jobTitle: 'Старший механик',
+        managerId: 'adm1',
       ),
       Employee(
         id: 't2',
@@ -171,6 +247,7 @@ Map<String, dynamic> buildSeed() {
         pin: '0002',
         role: EmployeeRole.technician,
         jobTitle: 'Электромеханик',
+        managerId: 'adm1',
       ),
       Employee(
         id: 't3',
@@ -179,6 +256,7 @@ Map<String, dynamic> buildSeed() {
         pin: '0003',
         role: EmployeeRole.technician,
         jobTitle: 'Инженер по диагностике',
+        managerId: 'adm1',
       ),
       Employee(
         id: 't4',
@@ -187,7 +265,11 @@ Map<String, dynamic> buildSeed() {
         pin: '0004',
         role: EmployeeRole.technician,
         jobTitle: 'Механик',
+        managerId: 'adm1',
       ),
+
+      // 100 сгенерированных операторов
+      ...generatedOperators,
     ],
     'regions': [
       Region(id: 'reg1', name: 'Москва Юг', parkIds: ['p1', 'p2']),
@@ -197,6 +279,7 @@ Map<String, dynamic> buildSeed() {
       Region(id: 'reg5', name: 'Сочи', parkIds: ['p5']),
     ],
     'operatorLinks': [
+      // Старые привязки
       OperatorParkLink(id: 'lnk1', operatorId: 'op1', parkId: 'p1',
           status: LinkStatus.approved, initiatorAdminId: 'adm1',
           approverAdminId: 'adm2', approvedAt: DateTime.now()),
@@ -208,6 +291,9 @@ Map<String, dynamic> buildSeed() {
           approvedAt: DateTime.now()),
       OperatorParkLink(id: 'lnk4', operatorId: 'op4', parkId: 'p3',
           status: LinkStatus.approved, approvedAt: DateTime.now()),
+      
+      // 100 сгенерированных привязок
+      ...generatedLinks,
     ],
     'vacancies': [],
     'applications': [],
