@@ -536,6 +536,186 @@ class AppDatabase extends ChangeNotifier {
     }
   }
 
+  // ═══════════ операции с сотрудниками ═══════════
+
+  /// Устанавливает руководителей сотрудника.
+  /// Возвращает false, если создаётся цикл.
+  bool setManagers(Employee e, String? primaryId, List<String> extras) {
+    if (primaryId != null && wouldCreateCycle(e.id, primaryId)) return false;
+    e.managerId = primaryId;
+    e.additionalManagerIds =
+        extras.where((id) => id != primaryId).toList();
+    save();
+    return true;
+  }
+
+  /// Меняет роли сотрудника (основную + дополнительные), ведёт историю.
+  void setRoles(Employee e, EmployeeRole primary, List<EmployeeRole> extras) {
+    final now = DateTime.now();
+    final oldPrimary = e.role;
+    final oldExtras = List<EmployeeRole>.from(e.additionalRoles);
+
+    if (oldPrimary != primary) {
+      _closeCurrentHistory(
+          e, 'Смена основной роли: ${oldPrimary.label} → ${primary.label}');
+      e.history.add(RoleHistoryEntry(
+        id: 'h${DateTime.now().microsecondsSinceEpoch}',
+        role: primary,
+        parkId: e.parkId,
+        regionId: e.regionId,
+        startedAt: now,
+      ));
+    }
+
+    e.role = primary;
+    e.additionalRoles = List.from(extras);
+
+    for (final r in extras) {
+      if (!oldExtras.contains(r)) {
+        e.history.add(RoleHistoryEntry(
+          id: 'h${DateTime.now().microsecondsSinceEpoch}_${r.name}',
+          role: r,
+          parkId: e.parkId,
+          regionId: e.regionId,
+          startedAt: now,
+          reason: 'Добавлена дополнительная роль',
+        ));
+      }
+    }
+
+    for (final r in oldExtras) {
+      if (!extras.contains(r) && r != primary) {
+        for (final h in e.history) {
+          if (h.isCurrent && h.role == r) {
+            h.endedAt = now;
+            h.reason = 'Снята дополнительная роль';
+          }
+        }
+      }
+    }
+
+    save();
+  }
+
+  /// Переводит сотрудника в парк.
+  ///
+  /// Для операторов — переоформляет связь (reject старых + create+approve новой).
+  /// Для остальных — просто меняет parkId. Ставит основного руководителя
+  /// — активного админа нового парка (если есть).
+  void moveToPark(Employee e, String parkId, {String? byAdminId}) {
+    final now = DateTime.now();
+    _closeCurrentHistory(e, 'Переведён в другой парк');
+
+    if (e.hasRole(EmployeeRole.operator)) {
+      for (final l in linksForOperator(e.id).toList()) {
+        if (l.status == LinkStatus.approved) {
+          l.status = LinkStatus.rejected;
+        }
+      }
+      createLinkRequest(e.id, parkId, initiatorAdminId: byAdminId);
+      if (byAdminId != null) {
+        final created = linksForOperator(e.id)
+            .firstWhereOrNull((l) => l.parkId == parkId);
+        if (created != null) approveLink(created.id, byAdminId);
+      }
+      e.parkId = null;
+    } else {
+      e.parkId = parkId;
+    }
+
+    e.regionId = null;
+    e.status = EmployeeStatus.active;
+    e.statusChangedAt = now;
+
+    final park = parkById(parkId);
+    if (park != null) {
+      final loc = locById(park.locId);
+      if (loc != null) e.lastCityId = loc.cityId;
+      final parkAdmin =
+          parkAdminsOf(parkId).firstWhereOrNull((a) => a.id != e.id);
+      if (parkAdmin != null) e.managerId = parkAdmin.id;
+    }
+
+    e.history.add(RoleHistoryEntry(
+      id: 'h${DateTime.now().microsecondsSinceEpoch}',
+      role: e.role,
+      parkId: parkId,
+      startedAt: now,
+    ));
+
+    save();
+  }
+
+  /// Переводит сотрудника в регион (делает региональным админом).
+  void moveToRegion(Employee e, String regionId, {String? byAdminId}) {
+    final now = DateTime.now();
+    _closeCurrentHistory(e, 'Переведён в другой регион');
+    e.history.add(RoleHistoryEntry(
+      id: 'h${DateTime.now().microsecondsSinceEpoch}',
+      role: EmployeeRole.regionalAdmin,
+      regionId: regionId,
+      startedAt: now,
+    ));
+    e.role = EmployeeRole.regionalAdmin;
+    e.regionId = regionId;
+    e.parkId = null;
+    e.status = EmployeeStatus.active;
+    e.statusChangedAt = now;
+
+    if (byAdminId != null) {
+      e.managerId = byAdminId;
+    } else {
+      final superAdmin = superAdmins.isNotEmpty ? superAdmins.first : null;
+      if (superAdmin != null) e.managerId = superAdmin.id;
+    }
+
+    save();
+  }
+
+  /// Отвязывает сотрудника от парка (делает «свободным»).
+  void detachFromPark(Employee e) {
+    final now = DateTime.now();
+    _closeCurrentHistory(e, 'Отвязан от парка');
+
+    if (e.hasRole(EmployeeRole.operator)) {
+      for (final l in linksForOperator(e.id).toList()) {
+        l.status = LinkStatus.rejected;
+      }
+    }
+
+    e.parkId = null;
+    e.regionId = null;
+    e.status = EmployeeStatus.active;
+    e.statusChangedAt = now;
+
+    e.history.add(RoleHistoryEntry(
+      id: 'h${DateTime.now().microsecondsSinceEpoch}',
+      role: e.role,
+      startedAt: now,
+    ));
+
+    save();
+  }
+
+  /// Увольняет сотрудника: закрывает историю, отклоняет связи, чистит parkId.
+  void fireEmployee(Employee e) {
+    final now = DateTime.now();
+    _closeCurrentHistory(e, 'Уволен');
+
+    if (e.hasRole(EmployeeRole.operator)) {
+      for (final l in linksForOperator(e.id).toList()) {
+        l.status = LinkStatus.rejected;
+      }
+    }
+
+    e.status = EmployeeStatus.fired;
+    e.statusChangedAt = now;
+    e.parkId = null;
+    e.regionId = null;
+
+    save();
+  }
+
   // ═══════════ связи оператор ↔ парк ═══════════
 
   List<OperatorParkLink> linksForOperator(String opId) =>
