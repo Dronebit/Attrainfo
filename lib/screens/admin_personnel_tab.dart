@@ -443,7 +443,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       }
     }
 
-    final regionKeys = grouped.keys.toList()
+    // Добавляем регионы, где есть только рег. админ (без парков)
+    final allRegionKeys = <String>{};
+    allRegionKeys.addAll(grouped.keys);
+    for (final r in regionals) {
+      if (r.regionId != null) allRegionKeys.add(r.regionId!);
+    }
+
+    final regionKeys = allRegionKeys.toList()
       ..sort((a, b) {
         if (a == '__unassigned__') return 1;
         if (b == '__unassigned__') return -1;
@@ -460,7 +467,9 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         ...regionKeys.map((rk) {
           final regionAdmins =
               regionals.where((r) => r.regionId == rk).toList();
-          return _regionBlock(rk, grouped[rk]!, regionAdmins);
+          final citiesMap =
+              grouped[rk] ?? <String, Map<String, List<Employee>>>{};
+          return _regionBlock(rk, citiesMap, regionAdmins);
         }),
       if (loose.isNotEmpty) _looseBlock(loose),
     ]);
@@ -536,7 +545,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         return (ca?.name ?? '').compareTo(cb?.name ?? '');
       });
     final count = cities.values.fold<int>(
-        0, (a, m) => a + m.values.fold<int>(0, (x, l) => x + l.length));
+            0, (a, m) => a + m.values.fold<int>(0, (x, l) => x + l.length)) +
+        regionAdmins.length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -574,21 +584,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                         : AppColors.cyn),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(region?.name ?? 'Без региона',
-                          style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700)),
-                      if (regionAdmins.isNotEmpty)
-                        Text(
-                          'Рег. админ: ${regionAdmins.map((a) => a.name).join(", ")}',
-                          style: const TextStyle(
-                              fontSize: 10.5, color: AppColors.dim),
-                        ),
-                    ],
-                  ),
+                  child: Text(region?.name ?? 'Без региона',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700)),
                 ),
                 _countBadge(count),
               ]),
@@ -599,8 +598,22 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             Padding(
               padding: const EdgeInsets.all(8),
               child: Column(
-                children:
-                    cityKeys.map((ck) => _cityBlock(ck, cities[ck]!)).toList(),
+                children: [
+                  ...regionAdmins.map((a) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: _employeeRow(a,
+                            labelPrefix: 'рег. админ',
+                            roleOverride: 'Рег. админ'),
+                      )),
+                  ...cityKeys.map((ck) => _cityBlock(ck, cities[ck]!)),
+                  if (cityKeys.isEmpty && regionAdmins.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Text('Нет сотрудников',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.dim)),
+                    ),
+                ],
               ),
             ),
           ],
@@ -677,9 +690,13 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   Widget _parkBlock(String parkId, List<Employee> employees) {
     final park = db.parkById(parkId);
     final collapsed = _collapsedParks.contains(parkId);
-    final admin = _section == 'operators'
+    final parkAdmin = _section == 'operators'
         ? db.parkAdminsOf(parkId).firstOrNull
         : null;
+
+    final others = parkAdmin != null
+        ? employees.where((e) => e.id != parkAdmin.id).toList()
+        : employees;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6, left: 12),
@@ -718,7 +735,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                       style: const TextStyle(
                           fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
-                Text('${employees.length}',
+                Text(
+                    '${(parkAdmin != null ? 1 : 0) + others.length}',
                     style: const TextStyle(
                         fontSize: 10, color: AppColors.dim)),
               ]),
@@ -729,13 +747,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
               padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
               child: Column(
                 children: [
-                  if (admin != null)
+                  if (parkAdmin != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 2),
-                      child: _employeeRow(admin,
-                          labelPrefix: 'админ', roleOverride: 'Админ парка'),
+                      child: _employeeRow(parkAdmin,
+                          labelPrefix: 'админ',
+                          roleOverride: 'Админ парка'),
                     ),
-                  ...employees.map((e) => _employeeRow(e)).toList(),
+                  ...others.map((e) => _employeeRow(e)).toList(),
                 ],
               ),
             ),
@@ -810,7 +829,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     final all = _filteredAll();
     final visibleIds = all.map((e) => e.id).toSet();
 
-    // Верхушка дерева — сотрудники без managerId ИЛИ с managerId вне фильтра
     final roots = all.where((e) {
       if (e.managerId == null) return true;
       final mgr = db.employeeById(e.managerId);
@@ -916,8 +934,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 5, vertical: 1),
                             decoration: BoxDecoration(
-                              color:
-                                  Color(e.role.colorValue).withValues(alpha: 0.12),
+                              color: Color(e.role.colorValue)
+                                  .withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(99),
                             ),
                             child: Text(e.role.label,
@@ -1417,7 +1435,9 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             icon: Icons.park_outlined, label: 'парков', value: '$parks'));
         if (reports > 0) {
           stats.add(_StatItem(
-              icon: Icons.people_outline, label: 'в подчинении', value: '$reports'));
+              icon: Icons.people_outline,
+              label: 'в подчинении',
+              value: '$reports'));
         }
         break;
       case EmployeeRole.technician:
@@ -1525,8 +1545,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       ],
     );
   }
-
-  // ═══════════ действия ═══════════
 
   Widget _actionsGrid(Employee e, StateSetter setS) {
     final hasWorkplace = _approvedParkIds(e).isNotEmpty || e.regionId != null;
@@ -1917,7 +1935,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     if (park != null) {
       final loc = db.locById(park.locId);
       if (loc != null) e.lastCityId = loc.cityId;
-      // Обновляем руководителя по новому месту
       final parkAdmin = db.parkAdminsOf(parkId).firstOrNull;
       if (parkAdmin != null && parkAdmin.id != e.id) {
         e.managerId = parkAdmin.id;
