@@ -1918,55 +1918,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
 
     if (ok != true) return;
-
-    final now = DateTime.now();
-    final oldPrimary = e.role;
-    final oldExtras = List<EmployeeRole>.from(e.additionalRoles);
-
-    if (oldPrimary != primary) {
-      for (final h in e.history) {
-        if (h.isCurrent) {
-          h.endedAt = now;
-          h.reason = 'Смена основной роли: ${oldPrimary.label} → ${primary.label}';
-        }
-      }
-      e.history.add(RoleHistoryEntry(
-        id: _uid(),
-        role: primary,
-        parkId: e.parkId,
-        regionId: e.regionId,
-        startedAt: now,
-      ));
-    }
-
-    e.role = primary;
-    e.additionalRoles = extras.toList();
-
-    for (final r in extras) {
-      if (!oldExtras.contains(r)) {
-        e.history.add(RoleHistoryEntry(
-          id: _uid(),
-          role: r,
-          parkId: e.parkId,
-          regionId: e.regionId,
-          startedAt: now,
-          reason: 'Добавлена дополнительная роль',
-        ));
-      }
-    }
-
-    for (final r in oldExtras) {
-      if (!extras.contains(r) && r != primary) {
-        for (final h in e.history) {
-          if (h.isCurrent && h.role == r) {
-            h.endedAt = now;
-            h.reason = 'Снята дополнительная роль';
-          }
-        }
-      }
-    }
-
-    await db.save();
+    db.setRoles(e, primary, extras.toList());
     setS(() {});
     _snack('Роли обновлены');
   }
@@ -2069,15 +2021,11 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
     if (ok != true) return;
 
-    if (primaryId != null && db.wouldCreateCycle(e.id, primaryId!)) {
+    final ok2 = db.setManagers(e, primaryId, extras.toList());
+    if (!ok2) {
       _snack('Нельзя: это создаст циклическую иерархию');
       return;
     }
-    extras.remove(primaryId);
-
-    e.managerId = primaryId;
-    e.additionalManagerIds = extras.toList();
-    await db.save();
     setS(() {});
     _snack('Руководители обновлены');
   }
@@ -2185,32 +2133,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
     if (ok != true) return;
 
-    final now = DateTime.now();
-    for (final h in e.history) {
-      if (h.isCurrent) {
-        h.endedAt = now;
-        h.reason = 'Отвязан от парка';
-      }
-    }
-
-    if (e.hasRole(EmployeeRole.operator)) {
-      for (final l in db.linksForOperator(e.id).toList()) {
-        l.status = LinkStatus.rejected;
-      }
-    }
-
-    e.parkId = null;
-    e.regionId = null;
-    e.status = EmployeeStatus.active;
-    e.statusChangedAt = now;
-
-    e.history.add(RoleHistoryEntry(
-      id: _uid(),
-      role: e.role,
-      startedAt: now,
-    ));
-
-    await db.save();
+    db.detachFromPark(e);
     setS(() {});
     _snack('${e.name} отвязан от парка');
   }
@@ -2339,52 +2262,9 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       return;
     }
 
-    final now = DateTime.now();
-    for (final h in e.history) {
-      if (h.isCurrent) {
-        h.endedAt = now;
-        h.reason = 'Переведён в другой парк';
-      }
-    }
-
-    if (e.hasRole(EmployeeRole.operator)) {
-      for (final l in db.linksForOperator(e.id).toList()) {
-        if (l.status == LinkStatus.approved) {
-          l.status = LinkStatus.rejected;
-        }
-      }
-      db.createLinkRequest(e.id, newParkId, initiatorAdminId: me.id);
-      final created = db
-          .linksForOperator(e.id)
-          .firstWhere((l) => l.parkId == newParkId);
-      db.approveLink(created.id, me.id);
-      e.parkId = null;
-    } else {
-      e.parkId = newParkId;
-    }
-    e.regionId = null;
-    e.status = EmployeeStatus.active;
-    e.statusChangedAt = now;
-    final park = db.parkById(newParkId);
-    if (park != null) {
-      final loc = db.locById(park.locId);
-      if (loc != null) e.lastCityId = loc.cityId;
-      final parkAdmin = db.parkAdminsOf(newParkId).firstOrNull;
-      if (parkAdmin != null && parkAdmin.id != e.id) {
-        e.managerId = parkAdmin.id;
-      }
-    }
-
-    e.history.add(RoleHistoryEntry(
-      id: _uid(),
-      role: e.role,
-      parkId: newParkId,
-      startedAt: now,
-    ));
-
-    await db.save();
+    db.moveToPark(e, newParkId, byAdminId: me.id);
     setS(() {});
-    _snack('Переведён в ${park?.name ?? "парк"}');
+    _snack('Переведён в ${db.parkById(newParkId)?.name ?? "парк"}');
   }
 
   Future<void> _changeRegion(Employee e, StateSetter setS) async {
@@ -2430,29 +2310,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
 
     if (result == null || result == e.regionId) return;
-    final now = DateTime.now();
-    for (final h in e.history) {
-      if (h.isCurrent) {
-        h.endedAt = now;
-        h.reason = 'Переведён в другой регион';
-      }
-    }
-    e.history.add(RoleHistoryEntry(
-      id: _uid(),
-      role: EmployeeRole.regionalAdmin,
-      regionId: result,
-      startedAt: now,
-    ));
-    e.role = EmployeeRole.regionalAdmin;
-    e.regionId = result;
-    e.parkId = null;
-    e.status = EmployeeStatus.active;
-    e.statusChangedAt = now;
-    final superAdmin = db.superAdmins.isNotEmpty
-        ? db.superAdmins.first
-        : null;
-    if (superAdmin != null) e.managerId = superAdmin.id;
-    await db.save();
+    db.moveToRegion(e, result, byAdminId: me.id);
     setS(() {});
     _snack('Переведён в регион');
   }
@@ -2601,25 +2459,22 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       ),
     );
     if (ok != true) return;
-    e.status = sel;
-    e.statusChangedAt = DateTime.now();
-    e.statusNote = sel == EmployeeStatus.active
-        ? null
-        : (noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim());
-    if (sel == EmployeeStatus.fired) {
-      for (final h in e.history) {
-        if (h.isCurrent) {
-          h.endedAt = DateTime.now();
-          h.reason = 'Уволен';
-        }
-      }
-      if (e.hasRole(EmployeeRole.operator)) {
-        for (final l in db.linksForOperator(e.id).toList()) {
-          l.status = LinkStatus.rejected;
-        }
-      }
+
+    if (sel == EmployeeStatus.fired && e.status != EmployeeStatus.fired) {
+      // Используем общий метод — он корректно закроет историю и отклонит связи
+      db.fireEmployee(e);
+      e.statusNote = noteCtrl.text.trim().isEmpty
+          ? null
+          : noteCtrl.text.trim();
+      await db.save();
+    } else {
+      e.status = sel;
+      e.statusChangedAt = DateTime.now();
+      e.statusNote = sel == EmployeeStatus.active
+          ? null
+          : (noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim());
+      await db.save();
     }
-    await db.save();
     setS(() {});
     _snack('Статус изменён');
   }
@@ -2648,23 +2503,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       ),
     );
     if (ok != true) return;
-    final now = DateTime.now();
-    for (final h in e.history) {
-      if (h.isCurrent) {
-        h.endedAt = now;
-        h.reason = 'Уволен';
-      }
-    }
-    if (e.hasRole(EmployeeRole.operator)) {
-      for (final l in db.linksForOperator(e.id).toList()) {
-        l.status = LinkStatus.rejected;
-      }
-    }
-    e.status = EmployeeStatus.fired;
-    e.statusChangedAt = now;
-    e.parkId = null;
-    e.regionId = null;
-    await db.save();
+
+    db.fireEmployee(e);
     setS(() {});
     _snack('${e.name} уволен');
   }
