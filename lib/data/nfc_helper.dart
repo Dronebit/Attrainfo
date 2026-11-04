@@ -23,19 +23,20 @@ class NfcHelper {
 
   static String? _readUid(NfcTag tag) {
     // Пробуем по очереди разные типы. Первый совпавший — берёт свой UID.
+    // В nfc_manager 4.x UID лежит в .tag.id (Uint8List), а не .identifier.
     final nfcA = NfcAAndroid.from(tag);
     if (nfcA != null) {
-      return _toHex(nfcA.tag.identifier);
+      return _toHex(nfcA.tag.id);
     }
 
     final isoDep = IsoDepAndroid.from(tag);
     if (isoDep != null) {
-      return _toHex(isoDep.tag.identifier);
+      return _toHex(isoDep.tag.id);
     }
 
     final mifare = MifareClassicAndroid.from(tag);
     if (mifare != null) {
-      return _toHex(mifare.tag.identifier);
+      return _toHex(mifare.tag.id);
     }
 
     return null;
