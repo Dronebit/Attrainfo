@@ -4,6 +4,7 @@ class Shift {
   List<String> rideIds;
   bool isRelief;
   String? operatorId;
+  String? vacancyId;
 
   Shift({
     required this.parkId,
@@ -11,6 +12,7 @@ class Shift {
     List<String>? rideIds,
     this.isRelief = false,
     this.operatorId,
+    this.vacancyId,
   }) : rideIds = rideIds ?? [];
 
   Map<String, dynamic> toJson() => {
@@ -19,6 +21,7 @@ class Shift {
         'rideIds': rideIds,
         'isRelief': isRelief,
         'operatorId': operatorId,
+        'vacancyId': vacancyId,
       };
 
   factory Shift.fromJson(Map<String, dynamic> j) => Shift(
@@ -27,5 +30,6 @@ class Shift {
         rideIds: List<String>.from(j['rideIds'] ?? []),
         isRelief: j['isRelief'] ?? false,
         operatorId: j['operatorId'],
+        vacancyId: j['vacancyId'],
       );
 }
