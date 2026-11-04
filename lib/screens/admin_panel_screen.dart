@@ -723,7 +723,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                                     final ok =
                                         await _confirmRemoveAdmin(a);
                                     if (ok != true) return;
-                                    _doRemoveFromPark(db, a);
+                                    db.removeAdminFromPark(a,
+                                        byAdminId: _currentAdmin?.id);
                                     if (!ctx.mounted) return;
                                     setS(() {});
                                     _snack('Снят: ${a.name}');
@@ -1049,7 +1050,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     return true;
   }
 
-  // ═══════════ снять / назначить ═══════════
+  // ═══════════ confirm remove admin ═══════════
 
   Future<bool?> _confirmRemoveAdmin(Employee a) async {
     return showDialog<bool>(
@@ -1085,126 +1086,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         ],
       ),
     );
-  }
-
-  void _doRemoveFromPark(AppDatabase db, Employee a) {
-    final now = DateTime.now();
-    final removedParkId = a.parkId;
-    for (final h in a.history) {
-      if (h.isCurrent) {
-        h.endedAt = now;
-        h.reason = 'Снят с должности';
-      }
-    }
-    a.parkId = null;
-    a.regionId = null;
-    a.status = EmployeeStatus.active;
-    a.statusChangedAt = now;
-    // Снятый админ подчиняется super (или снимающему, если он super)
-    if (_currentAdmin != null) {
-      a.managerId = _currentAdmin!.id;
-    }
-
-    // Убрать снятого админа из additionalManagerIds у сотрудников его парка,
-    // если он был там записан.
-    if (removedParkId != null) {
-      for (final e in db.employees) {
-        if (e.additionalManagerIds.contains(a.id)) {
-          e.additionalManagerIds.remove(a.id);
-        }
-      }
-    }
-
-    db.save();
-  }
-
-  void _doAssignAdminToPark(
-      AppDatabase db, Employee a, Park park, String? reason) {
-    final now = DateTime.now();
-    for (final h in a.history) {
-      if (h.isCurrent) {
-        h.endedAt = now;
-        h.reason = reason ?? 'Переведён';
-      }
-    }
-    a.history.add(RoleHistoryEntry(
-      id: _uid(),
-      role: EmployeeRole.parkAdmin,
-      parkId: park.id,
-      startedAt: now,
-    ));
-    a.role = EmployeeRole.parkAdmin;
-    a.parkId = park.id;
-    a.regionId = null;
-    a.status = EmployeeStatus.active;
-    a.statusChangedAt = now;
-    final loc = db.locById(park.locId);
-    if (loc != null) a.lastCityId = loc.cityId;
-
-    // Автоподчинение нового админа: рег. админ региона парка или super
-    final regions = db.regionsOfPark(park.id);
-    if (regions.isNotEmpty) {
-      final regionAdmin = db.employees.firstWhere(
-        (x) =>
-            x.role == EmployeeRole.regionalAdmin &&
-            x.regionId == regions.first.id &&
-            x.status == EmployeeStatus.active,
-        orElse: () => Employee(id: '', name: ''),
-      );
-      if (regionAdmin.id.isNotEmpty) {
-        a.managerId = regionAdmin.id;
-      } else {
-        final superAdmin = db.superAdmins.isNotEmpty
-            ? db.superAdmins.first
-            : Employee(id: '', name: '');
-        if (superAdmin.id.isNotEmpty) a.managerId = superAdmin.id;
-      }
-    } else {
-      final superAdmin = db.superAdmins.isNotEmpty
-          ? db.superAdmins.first
-          : Employee(id: '', name: '');
-      if (superAdmin.id.isNotEmpty) a.managerId = superAdmin.id;
-    }
-
-    // Все операторы и техники парка — в подчинение новому админу.
-    // Если у сотрудника уже есть активный основной руководитель —
-    // новый админ уходит в additionalManagerIds.
-    bool _needsAdditional(Employee e) {
-      if (e.managerId == null) return false;
-      if (e.managerId == a.id) return false;
-      final cur = db.employeeById(e.managerId);
-      return cur != null && cur.status != EmployeeStatus.fired;
-    }
-
-    void _addManager(Employee e) {
-      if (e.id == a.id) return;
-      if (e.managerId == a.id) return;
-      if (e.additionalManagerIds.contains(a.id)) return;
-      if (_needsAdditional(e)) {
-        e.additionalManagerIds.add(a.id);
-      } else {
-        e.managerId = a.id;
-        e.additionalManagerIds.remove(a.id);
-      }
-    }
-
-    for (final link in db.operatorLinks) {
-      if (link.parkId == park.id && link.status == LinkStatus.approved) {
-        final op = db.employeeById(link.operatorId);
-        if (op != null && op.status != EmployeeStatus.fired) {
-          _addManager(op);
-        }
-      }
-    }
-
-    for (final e in db.employees) {
-      if (e.status == EmployeeStatus.fired) continue;
-      if (e.hasRole(EmployeeRole.technician) && e.parkId == park.id) {
-        _addManager(e);
-      }
-    }
-
-    db.save();
   }
 
   // ═══════════ меню региона ═══════════
@@ -2620,13 +2501,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                                   if (confirmed != true) return;
                                   if (!ctx.mounted) return;
 
-                                  _doAssignAdminToPark(
-                                      db,
-                                      a,
-                                      park,
-                                      a.parkId != null
-                                          ? 'Переведён из другого парка'
-                                          : 'Назначен администратором');
+                                  db.assignAdminToPark(
+                                    a,
+                                    park,
+                                    reason: a.parkId != null
+                                        ? 'Переведён из другого парка'
+                                        : 'Назначен администратором',
+                                  );
 
                                   Navigator.pop(ctx, true);
                                   _snack('Назначен: ${a.name}');
@@ -2749,61 +2630,43 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         cityId = loc?.cityId;
       }
     }
+
+    // Для паркового админа создаём без history — assignAdminToPark
+    // создаст корректную запись и подчинит операторов/техников.
     final newAdmin = Employee(
       id: _uid(),
       name: name,
       phone: phone,
       pin: pin,
-      role: isRegional ? EmployeeRole.regionalAdmin : EmployeeRole.parkAdmin,
+      role: isRegional
+          ? EmployeeRole.regionalAdmin
+          : EmployeeRole.operator, // временная, перезапишется
       regionId: regionId,
-      parkId: parkId,
       lastCityId: cityId,
       managerId: _currentAdmin?.id,
       createdAt: now,
-      history: [
-        RoleHistoryEntry(
-          id: _uid(),
-          role: isRegional
-              ? EmployeeRole.regionalAdmin
-              : EmployeeRole.parkAdmin,
-          regionId: regionId,
-          parkId: parkId,
-          startedAt: now,
-        ),
-      ],
+      history: isRegional
+          ? [
+              RoleHistoryEntry(
+                id: _uid(),
+                role: EmployeeRole.regionalAdmin,
+                regionId: regionId,
+                startedAt: now,
+              ),
+            ]
+          : [],
     );
     db.employees.add(newAdmin);
 
-    // Если создан парковый админ — сразу подчинить ему операторов и техников
     if (!isRegional && parkId != null) {
-      for (final link in db.operatorLinks) {
-        if (link.parkId == parkId && link.status == LinkStatus.approved) {
-          final op = db.employeeById(link.operatorId);
-          if (op != null && op.status != EmployeeStatus.fired) {
-            if (op.managerId == null) {
-              op.managerId = newAdmin.id;
-            } else if (op.managerId != newAdmin.id &&
-                !op.additionalManagerIds.contains(newAdmin.id)) {
-              op.additionalManagerIds.add(newAdmin.id);
-            }
-          }
-        }
+      final park = db.parkById(parkId);
+      if (park != null) {
+        db.assignAdminToPark(newAdmin, park, reason: 'Создан и назначен');
       }
-      for (final e in db.employees) {
-        if (e.status == EmployeeStatus.fired) continue;
-        if (e.id == newAdmin.id) continue;
-        if (e.hasRole(EmployeeRole.technician) && e.parkId == parkId) {
-          if (e.managerId == null) {
-            e.managerId = newAdmin.id;
-          } else if (e.managerId != newAdmin.id &&
-              !e.additionalManagerIds.contains(newAdmin.id)) {
-            e.additionalManagerIds.add(newAdmin.id);
-          }
-        }
-      }
+    } else {
+      await db.save();
     }
 
-    await db.save();
     DebugLog.instance.info(
         'admin created: $name (${isRegional ? "regional" : "park"})');
     if (!mounted) return null;
