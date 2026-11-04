@@ -191,14 +191,19 @@ class AppDatabase extends ChangeNotifier {
   }
 
   City? cityOfAdmin(Employee admin) {
-    if (admin.role == EmployeeRole.parkAdmin && admin.parkId != null) {
-      final park = parkById(admin.parkId);
-      if (park == null) return null;
-      final loc = locById(park.locId);
-      return loc == null ? null : cityById(loc.cityId);
-    }
-    return null;
+  // Если привязан к парку — вычисляем из парка
+  if (admin.role == EmployeeRole.parkAdmin && admin.parkId != null) {
+    final park = parkById(admin.parkId);
+    if (park == null) return null;
+    final loc = locById(park.locId);
+    return loc == null ? null : cityById(loc.cityId);
   }
+  // Если снят (parkId == null) — возвращаем сохранённый город
+  if (admin.lastCityId != null) {
+    return cityById(admin.lastCityId);
+  }
+  return null;
+}
 
   Region createRegion(String name, {List<String>? parkIds}) {
     final region = Region(
