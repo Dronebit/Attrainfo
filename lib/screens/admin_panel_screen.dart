@@ -1106,55 +1106,76 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 
   void _doAssignAdminToPark(
-      AppDatabase db, Employee a, Park park, String? reason) {
-    final now = DateTime.now();
-    for (final h in a.history) {
-      if (h.isCurrent) {
-        h.endedAt = now;
-        h.reason = reason ?? 'Переведён';
-      }
+    AppDatabase db, Employee a, Park park, String? reason) {
+  final now = DateTime.now();
+  for (final h in a.history) {
+    if (h.isCurrent) {
+      h.endedAt = now;
+      h.reason = reason ?? 'Переведён';
     }
-    a.history.add(RoleHistoryEntry(
-      id: _uid(),
-      role: EmployeeRole.parkAdmin,
-      parkId: park.id,
-      startedAt: now,
-    ));
-    a.role = EmployeeRole.parkAdmin;
-    a.parkId = park.id;
-    a.regionId = null;
-    a.status = EmployeeStatus.active;
-    a.statusChangedAt = now;
-    final loc = db.locById(park.locId);
-    if (loc != null) a.lastCityId = loc.cityId;
+  }
+  a.history.add(RoleHistoryEntry(
+    id: _uid(),
+    role: EmployeeRole.parkAdmin,
+    parkId: park.id,
+    startedAt: now,
+  ));
+  a.role = EmployeeRole.parkAdmin;
+  a.parkId = park.id;
+  a.regionId = null;
+  a.status = EmployeeStatus.active;
+  a.statusChangedAt = now;
+  final loc = db.locById(park.locId);
+  if (loc != null) a.lastCityId = loc.cityId;
 
-    // Автоподчинение: рег. админ региона парка или super
-    final regions = db.regionsOfPark(park.id);
-    if (regions.isNotEmpty) {
-      final regionAdmin = db.employees.firstWhere(
-        (x) =>
-            x.role == EmployeeRole.regionalAdmin &&
-            x.regionId == regions.first.id &&
-            x.status == EmployeeStatus.active,
-        orElse: () => Employee(id: '', name: ''),
-      );
-      if (regionAdmin.id.isNotEmpty) {
-        a.managerId = regionAdmin.id;
-      } else {
-        final superAdmin = db.superAdmins.isNotEmpty
-            ? db.superAdmins.first
-            : Employee(id: '', name: '');
-        if (superAdmin.id.isNotEmpty) a.managerId = superAdmin.id;
-      }
+  // Автоподчинение нового админа: рег. админ региона парка или super
+  final regions = db.regionsOfPark(park.id);
+  if (regions.isNotEmpty) {
+    final regionAdmin = db.employees.firstWhere(
+      (x) =>
+          x.role == EmployeeRole.regionalAdmin &&
+          x.regionId == regions.first.id &&
+          x.status == EmployeeStatus.active,
+      orElse: () => Employee(id: '', name: ''),
+    );
+    if (regionAdmin.id.isNotEmpty) {
+      a.managerId = regionAdmin.id;
     } else {
       final superAdmin = db.superAdmins.isNotEmpty
           ? db.superAdmins.first
           : Employee(id: '', name: '');
       if (superAdmin.id.isNotEmpty) a.managerId = superAdmin.id;
     }
-
-    db.save();
+  } else {
+    final superAdmin = db.superAdmins.isNotEmpty
+        ? db.superAdmins.first
+        : Employee(id: '', name: '');
+    if (superAdmin.id.isNotEmpty) a.managerId = superAdmin.id;
   }
+
+  // Все операторы парка — в подчинение новому админу
+  for (final link in db.operatorLinks) {
+    if (link.parkId == park.id && link.status == LinkStatus.approved) {
+      final op = db.employeeById(link.operatorId);
+      if (op != null &&
+          op.status != EmployeeStatus.fired &&
+          op.id != a.id) {
+        op.managerId = a.id;
+      }
+    }
+  }
+
+  // Все техники парка — тоже в подчинение
+  for (final e in db.employees) {
+    if (e.status == EmployeeStatus.fired) continue;
+    if (e.id == a.id) continue;
+    if (e.hasRole(EmployeeRole.technician) && e.parkId == park.id) {
+      e.managerId = a.id;
+    }
+  }
+
+  db.save();
+}
 
   // ═══════════ меню региона ═══════════
 
