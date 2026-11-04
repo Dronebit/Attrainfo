@@ -43,25 +43,26 @@ extension EmployeeRoleX on EmployeeRole {
       }[this]!;
 
   /// Кем может руководить эта роль (сверху вниз)
-  List<EmployeeRole> get canManageRoles => const {
-        EmployeeRole.superAdmin: [
-          EmployeeRole.regionalAdmin,
-          EmployeeRole.parkAdmin,
-          EmployeeRole.operator,
-          EmployeeRole.technician,
-        ],
-        EmployeeRole.regionalAdmin: [
-          EmployeeRole.parkAdmin,
-          EmployeeRole.operator,
-          EmployeeRole.technician,
-        ],
-        EmployeeRole.parkAdmin: [
-          EmployeeRole.operator,
-          EmployeeRole.technician,
-        ],
-        EmployeeRole.operator: [],
-        EmployeeRole.technician: [],
-      }[this]!;
+  /// Кем может руководить эта роль (сверху вниз)
+List<EmployeeRole> get canManageRoles => const <EmployeeRole, List<EmployeeRole>>{
+      EmployeeRole.superAdmin: [
+        EmployeeRole.regionalAdmin,
+        EmployeeRole.parkAdmin,
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+      EmployeeRole.regionalAdmin: [
+        EmployeeRole.parkAdmin,
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+      EmployeeRole.parkAdmin: [
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+      EmployeeRole.operator: [],
+      EmployeeRole.technician: [],
+    }[this]!;
 
   /// Кем может быть руководитель этой роли
   List<EmployeeRole> get allowedManagerRoles =>
