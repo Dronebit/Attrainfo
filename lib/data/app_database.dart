@@ -12,8 +12,9 @@ import 'seed.dart';
 
 class AppDatabase extends ChangeNotifier {
   static const _key = 'attrakontrol-v8';
-static const _oldKey = 'attrakontrol-v7';
-static const _legacyKey = 'attrakontrol-v6';
+  static const _oldKey = 'attrakontrol-v7';
+  static const _legacyKey = 'attrakontrol-v6';
+  static const _ancientKey = 'attrakontrol-v5';
   static const masterPin = '9999';
 
   List<City> cities = [];
@@ -79,7 +80,7 @@ static const _legacyKey = 'attrakontrol-v6';
 
   Employee? operatorById(String? id) {
     final e = employeeById(id);
-    return (e != null && e.role == EmployeeRole.operator) ? e : null;
+    return (e != null && e.hasRole(EmployeeRole.operator)) ? e : null;
   }
 
   Employee? operatorByBadge(String? uid) => employeeByBadge(uid);
@@ -96,19 +97,19 @@ static const _legacyKey = 'attrakontrol-v6';
 
   Employee? techById(String? id) {
     final e = employeeById(id);
-    return (e != null && e.role == EmployeeRole.technician) ? e : null;
+    return (e != null && e.hasRole(EmployeeRole.technician)) ? e : null;
   }
 
   // ═══════════ списки по ролям ═══════════
 
   List<Employee> get operators =>
-      employees.where((e) => e.role == EmployeeRole.operator).toList();
+      employees.where((e) => e.hasRole(EmployeeRole.operator)).toList();
 
   List<Employee> get admins =>
       employees.where((e) => e.isAdmin).toList();
 
   List<Employee> get technicians =>
-      employees.where((e) => e.role == EmployeeRole.technician).toList();
+      employees.where((e) => e.hasRole(EmployeeRole.technician)).toList();
 
   List<Employee> get superAdmins => employees
       .where((e) =>
@@ -132,7 +133,6 @@ static const _legacyKey = 'attrakontrol-v6';
 
   // ═══════════ иерархия (managerId) ═══════════
 
-  /// Кто может быть руководителем для этой роли
   List<Employee> allowedManagersFor(Employee e) {
     final roles = e.role.allowedManagerRoles;
     return employees
@@ -149,7 +149,6 @@ static const _legacyKey = 'attrakontrol-v6';
       });
   }
 
-  /// Проверка на цикл: если назначить managerId, не создастся ли петля
   bool wouldCreateCycle(String employeeId, String managerId) {
     String? current = managerId;
     final visited = <String>{};
@@ -161,7 +160,6 @@ static const _legacyKey = 'attrakontrol-v6';
     return false;
   }
 
-  /// Прямые подчинённые сотрудника
   List<Employee> directReports(String managerId) => employees
       .where((e) =>
           e.managerId == managerId && e.status != EmployeeStatus.fired)
@@ -173,7 +171,6 @@ static const _legacyKey = 'attrakontrol-v6';
       return a.name.compareTo(b.name);
     });
 
-  /// Корневые сотрудники (без managerId или с недействительным managerId)
   List<Employee> rootEmployees() {
     return employees.where((e) {
       if (e.status == EmployeeStatus.fired) return false;
@@ -191,7 +188,6 @@ static const _legacyKey = 'attrakontrol-v6';
       });
   }
 
-  /// Автопроставить managerId всем, у кого он пустой
   void _backfillManagers() {
     for (final e in employees) {
       if (e.managerId != null) continue;
@@ -656,21 +652,36 @@ static const _legacyKey = 'attrakontrol-v6';
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // ─── v7 (новый формат) ───
-    final v7Raw = prefs.getString(_key);
-    if (v7Raw != null) {
+    // ─── v8 (новый формат) ───
+    final v8Raw = prefs.getString(_key);
+    if (v8Raw != null) {
       try {
-        _applyV6(jsonDecode(v7Raw));
+        _applyV6(jsonDecode(v8Raw));
         _backfillManagers();
         notifyListeners();
         return;
       } catch (e) {
-        debugPrint('Failed to load v7: $e');
+        debugPrint('Failed to load v8: $e');
       }
     }
 
-    // ─── v6 → v7 (миграция: добавляем managerId) ───
-    final v6Raw = prefs.getString(_oldKey);
+    // ─── v7 → v8 (миграция: добавляем additionalRoles) ───
+    final v7Raw = prefs.getString(_oldKey);
+    if (v7Raw != null) {
+      try {
+        final j = jsonDecode(v7Raw);
+        _applyV6(j);
+        _backfillManagers();
+        await save();
+        notifyListeners();
+        return;
+      } catch (e) {
+        debugPrint('Failed to migrate v7: $e');
+      }
+    }
+
+    // ─── v6 → v8 (миграция) ───
+    final v6Raw = prefs.getString(_legacyKey);
     if (v6Raw != null) {
       try {
         final j = jsonDecode(v6Raw);
@@ -684,8 +695,8 @@ static const _legacyKey = 'attrakontrol-v6';
       }
     }
 
-    // ─── v5 → v7 (двойная миграция) ───
-    final v5Raw = prefs.getString(_legacyKey);
+    // ─── v5 → v8 (двойная миграция) ───
+    final v5Raw = prefs.getString(_ancientKey);
     if (v5Raw != null) {
       try {
         final j = jsonDecode(v5Raw);
@@ -714,6 +725,7 @@ static const _legacyKey = 'attrakontrol-v6';
     await prefs.remove(_key);
     await prefs.remove(_oldKey);
     await prefs.remove(_legacyKey);
+    await prefs.remove(_ancientKey);
     _applyV6(_seedJson());
     _backfillManagers();
     activeShift = null;
@@ -871,7 +883,7 @@ static const _legacyKey = 'attrakontrol-v6';
     activeShift = sh is Map<String, dynamic> ? Shift.fromJson(sh) : null;
     opSelectingRides = j['opSelectingRides'] ?? false;
     currentParkId = j['currentParkId'];
-    debugPrint('Migration v5→v6: migrated ${emps.length} employees');
+    debugPrint('Migration v5→v8: migrated ${emps.length} employees');
   }
 }
 
