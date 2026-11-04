@@ -1044,7 +1044,7 @@ class _InfrastructureScreenState extends State<InfrastructureScreen> {
                     items: [
                       const DropdownMenuItem(
                           value: '', child: Text('— не назначен —')),
-                      for (final t in db.techs)
+                      for (final t in db.technicians)
                         DropdownMenuItem(
                           value: t.id,
                           child: Text('${t.name} · ${t.role}',
