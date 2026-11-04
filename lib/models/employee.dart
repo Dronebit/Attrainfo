@@ -160,7 +160,12 @@ class Employee {
 
   String? lastCityId;
 
+  /// Основной руководитель.
   String? managerId;
+
+  /// Дополнительные руководители (например, второй админ того же парка).
+  /// Основной остаётся в [managerId].
+  List<String> additionalManagerIds;
 
   DateTime createdAt;
   DateTime? statusChangedAt;
@@ -182,11 +187,13 @@ class Employee {
     this.address,
     this.lastCityId,
     this.managerId,
+    List<String>? additionalManagerIds,
     DateTime? createdAt,
     this.statusChangedAt,
     this.statusNote,
     List<RoleHistoryEntry>? history,
   })  : additionalRoles = additionalRoles ?? [],
+        additionalManagerIds = additionalManagerIds ?? [],
         createdAt = createdAt ?? DateTime.now(),
         history = history ?? [];
 
@@ -198,6 +205,12 @@ class Employee {
 
   /// Все роли (основная + дополнительные) — для отображения.
   List<EmployeeRole> get allRoles => [role, ...additionalRoles];
+
+  /// Все руководители (основной + дополнительные id).
+  List<String> get allManagerIds => [
+        if (managerId != null) managerId!,
+        ...additionalManagerIds,
+      ];
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -215,6 +228,7 @@ class Employee {
         'address': address,
         'lastCityId': lastCityId,
         'managerId': managerId,
+        'additionalManagerIds': additionalManagerIds,
         'createdAt': createdAt.toIso8601String(),
         'statusChangedAt': statusChangedAt?.toIso8601String(),
         'statusNote': statusNote,
@@ -248,6 +262,8 @@ class Employee {
         address: j['address'],
         lastCityId: j['lastCityId'],
         managerId: j['managerId'],
+        additionalManagerIds:
+            (j['additionalManagerIds'] as List?)?.cast<String>() ?? [],
         createdAt: j['createdAt'] != null
             ? DateTime.parse(j['createdAt'])
             : DateTime.now(),
