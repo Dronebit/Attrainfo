@@ -1,23 +1,16 @@
 import 'package:nfc_manager/nfc_manager.dart';
+import 'package:nfc_manager/nfc_manager_android.dart';
 
 class NfcHelper {
   /// Возвращает UID бейджа (hex-строку) или null, если скан отменён.
-  /// Бросает Exception, если NFC недоступен.
   static Future<String?> scanBadge() async {
     String? result;
 
     try {
       await NfcManager.instance.startSession(
-        pollingOptions: {
-          NfcPollingOption.iso14443,
-          NfcPollingOption.iso18092,
-          NfcPollingOption.iso15693,
-        },
+        pollingOptions: {NfcPollingOption.iso14443},
         onDiscovered: (NfcTag tag) async {
-          final id = _extractUid(tag);
-          if (id != null) {
-            result = _toHex(id);
-          }
+          result = _readUid(tag);
           await NfcManager.instance.stopSession();
         },
       );
@@ -28,22 +21,21 @@ class NfcHelper {
     return result;
   }
 
-  static List<int>? _extractUid(NfcTag tag) {
-    // Пробуем получить UID через конкретные типы тегов.
-    // В nfc_manager 4.x tag.data больше не Map, поэтому используем NfcA / IsoDep / MifareClassic.
-    final nfca = NfcA.from(tag);
-    if (nfca != null) {
-      return nfca.identifier;
+  static String? _readUid(NfcTag tag) {
+    // Пробуем по очереди разные типы. Первый совпавший — берёт свой UID.
+    final nfcA = NfcAAndroid.from(tag);
+    if (nfcA != null) {
+      return _toHex(nfcA.tag.identifier);
     }
 
-    final isodep = IsoDep.from(tag);
-    if (isodep != null) {
-      return isodep.identifier;
+    final isoDep = IsoDepAndroid.from(tag);
+    if (isoDep != null) {
+      return _toHex(isoDep.tag.identifier);
     }
 
-    final mifare = MifareClassic.from(tag);
+    final mifare = MifareClassicAndroid.from(tag);
     if (mifare != null) {
-      return mifare.identifier;
+      return _toHex(mifare.tag.identifier);
     }
 
     return null;
