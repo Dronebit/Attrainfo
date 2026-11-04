@@ -8,6 +8,11 @@ class NfcHelper {
 
     try {
       await NfcManager.instance.startSession(
+        pollingOptions: {
+          NfcPollingOption.iso14443,
+          NfcPollingOption.iso18092,
+          NfcPollingOption.iso15693,
+        },
         onDiscovered: (NfcTag tag) async {
           final id = _extractUid(tag);
           if (id != null) {
@@ -24,19 +29,23 @@ class NfcHelper {
   }
 
   static List<int>? _extractUid(NfcTag tag) {
-    final nfca = tag.data['nfca'];
-    final isodep = tag.data['isodep'];
-    final mifare = tag.data['mifareclassic'];
+    // Пробуем получить UID через конкретные типы тегов.
+    // В nfc_manager 4.x tag.data больше не Map, поэтому используем NfcA / IsoDep / MifareClassic.
+    final nfca = NfcA.from(tag);
+    if (nfca != null) {
+      return nfca.identifier;
+    }
 
-    if (nfca is Map && nfca['identifier'] is List) {
-      return List<int>.from(nfca['identifier']);
+    final isodep = IsoDep.from(tag);
+    if (isodep != null) {
+      return isodep.identifier;
     }
-    if (isodep is Map && isodep['identifier'] is List) {
-      return List<int>.from(isodep['identifier']);
+
+    final mifare = MifareClassic.from(tag);
+    if (mifare != null) {
+      return mifare.identifier;
     }
-    if (mifare is Map && mifare['identifier'] is List) {
-      return List<int>.from(mifare['identifier']);
-    }
+
     return null;
   }
 
