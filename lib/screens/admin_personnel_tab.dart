@@ -33,6 +33,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   String? _filterRegionId;
   String? _filterCityId;
   EmployeeStatus? _filterStatus;
+  EmployeeRole? _filterRole;
   String _query = '';
   final _searchCtrl = TextEditingController();
 
@@ -97,6 +98,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       } else if (_section == 'technicians') {
         if (e.role != EmployeeRole.technician) return false;
       }
+
+      if (_filterRole != null && e.role != _filterRole) return false;
 
       if (me.role != EmployeeRole.superAdmin) {
         final inMyRegion = (e.regionId != null &&
@@ -248,7 +251,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       ),
       child: Row(children: [
         Expanded(
-          child: _sectionTab('operators', Icons.support_agent, 'Операторы'),
+          child: _sectionTab(
+              'operators', Icons.support_agent, 'Операционный отдел'),
         ),
         Expanded(
           child: _sectionTab(
@@ -263,6 +267,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     return InkWell(
       onTap: () => setState(() {
         _section = key;
+        _filterRole = null; // Сбрасываем фильтр ролей при смене вкладки
         _collapsedTree.clear();
         _collapsedRegions.clear();
         _collapsedCities.clear();
@@ -300,6 +305,27 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       decoration: _cardDeco,
       child:
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // ─── Роли ───
+        const Text('Роли',
+            style: TextStyle(
+                fontSize: 10,
+                color: Color(0x9964748B),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5)),
+        const SizedBox(height: 4),
+        Wrap(spacing: 4, runSpacing: 4, children: [
+          _roleChip('Все', null),
+          if (_section == 'operators') ...[
+            _roleChip('Рег. админ', EmployeeRole.regionalAdmin),
+            _roleChip('Админ парка', EmployeeRole.parkAdmin),
+            _roleChip('Оператор', EmployeeRole.operator),
+          ] else if (_section == 'technicians') ...[
+            _roleChip('Механик', EmployeeRole.technician),
+          ],
+        ]),
+        const SizedBox(height: 8),
+
+        // ─── Статусы ───
         Wrap(spacing: 4, runSpacing: 4, children: [
           _statusChip('Все', null),
           _statusChip('Работают', EmployeeStatus.active),
@@ -308,6 +334,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           _statusChip('Уволены', EmployeeStatus.fired),
         ]),
         const SizedBox(height: 8),
+
+        // ─── Локация ───
         LayoutBuilder(builder: (c, box) {
           final cols = box.maxWidth > 600 ? 2 : 1;
           final w = (box.maxWidth - (cols - 1) * 6) / cols;
@@ -358,6 +386,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           ]);
         }),
         const SizedBox(height: 8),
+
+        // ─── Поиск ───
         TextField(
           controller: _searchCtrl,
           onChanged: (v) => setState(() => _query = v),
@@ -376,6 +406,32 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           ),
         ),
       ]),
+    );
+  }
+
+  Widget _roleChip(String label, EmployeeRole? role) {
+    final active = _filterRole == role;
+    return InkWell(
+      onTap: () => setState(() => _filterRole = role),
+      borderRadius: BorderRadius.circular(99),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: active
+              ? AppColors.cyn.withValues(alpha: 0.12)
+              : AppColors.panel2,
+          border: Border.all(
+              color: active
+                  ? AppColors.cyn.withValues(alpha: 0.4)
+                  : AppColors.line2),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: active ? AppColors.cyn : AppColors.mut)),
+      ),
     );
   }
 
@@ -459,6 +515,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 _filterRegionId = null;
                 _filterCityId = null;
                 _filterStatus = null;
+                _filterRole = null;
                 _query = '';
                 _searchCtrl.clear();
               }),
@@ -872,6 +929,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 _filterRegionId = null;
                 _filterCityId = null;
                 _filterStatus = null;
+                _filterRole = null;
                 _query = '';
                 _searchCtrl.clear();
               }),
@@ -1048,7 +1106,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         ),
         child: Row(
           children: [
-            // Аватар
             Container(
               width: 30,
               height: 30,
@@ -1067,8 +1124,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
               ),
             ),
             const SizedBox(width: 8),
-
-            // Имя и Роль/Должность
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1117,8 +1172,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
               ),
             ),
             const SizedBox(width: 6),
-
-            // Статус (вместо PIN)
             if (e.status != EmployeeStatus.active)
               Text(
                 e.status.label,
@@ -1133,7 +1186,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 height: 6,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-            
             const SizedBox(width: 4),
             const Icon(Icons.chevron_right, size: 14, color: AppColors.dim),
           ],
@@ -2904,6 +2956,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       _filterRegionId != null ||
       _filterCityId != null ||
       _filterStatus != null ||
+      _filterRole != null ||
       _query.isNotEmpty;
 
   String _initials(String name) {
