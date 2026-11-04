@@ -122,8 +122,6 @@ class Employee {
   String? jobTitle;
   String? address;
 
-  // Последний известный город (вычисляется при назначении в парк,
-  // сохраняется при снятии — чтобы «свободный админ» не терял город)
   String? lastCityId;
 
   DateTime createdAt;
