@@ -2,11 +2,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'data/app_database.dart';
+import 'data/debug_log.dart';
 import 'screens/home_shell.dart';
 import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (details) {
+    DebugLog.instance.error('FlutterError: ${details.exceptionAsString()}');
+    FlutterError.presentError(details);
+  };
 
   runZonedGuarded(() async {
     final db = AppDatabase();
@@ -16,6 +22,7 @@ void main() async {
       child: const AttraControlApp(),
     ));
   }, (error, stack) {
+    DebugLog.instance.error('Uncaught: $error');
     runApp(_ErrorApp(error: error, stack: stack));
   });
 }
@@ -50,13 +57,11 @@ class _ErrorApp extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '⚠️ Ошибка при запуске',
-                  style: TextStyle(
-                      fontSize: 20,
-                      color: Color(0xFFFF5D55),
-                      fontWeight: FontWeight.bold),
-                ),
+                const Text('⚠️ Ошибка при запуске',
+                    style: TextStyle(
+                        fontSize: 20,
+                        color: Color(0xFFFF5D55),
+                        fontWeight: FontWeight.bold)),
                 const SizedBox(height: 14),
                 const Text('Что упало:',
                     style: TextStyle(fontSize: 12, color: Color(0xFF93A1B8))),
