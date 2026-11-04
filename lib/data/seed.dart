@@ -1,10 +1,8 @@
 import '../models/enums.dart';
 import '../models/models.dart';
-import '../models/operator.dart';
-import '../models/park_admin.dart';
+import '../models/employee.dart';
 import '../models/operator_park_link.dart';
 import '../models/region.dart';
-
 
 Map<String, dynamic> buildSeed() {
   final now = DateTime.now();
@@ -26,9 +24,27 @@ Map<String, dynamic> buildSeed() {
       ParkLocation(id: 'l5', cityId: 'c4', name: 'Центральный район'),
     ],
     'parks': [
-      Park(id: 'p1', locId: 'l1', name: 'Парк Чудес'),
-      Park(id: 'p2', locId: 'l2', name: 'Страна Мечты'),
-      Park(id: 'p3', locId: 'l3', name: 'Остров Чудес'),
+      Park(
+        id: 'p1',
+        locId: 'l1',
+        name: 'Парк Чудес',
+        openedAt: DateTime(2019, 6, 12),
+        address: 'Москва, ВДНХ, аллея Космонавтов, 1',
+        phone: '+7 495 123-45-67',
+      ),
+      Park(
+        id: 'p2',
+        locId: 'l2',
+        name: 'Страна Мечты',
+        openedAt: DateTime(2020, 5, 1),
+        address: 'Москва, Нагатинская пойма, ул. Речная, 5',
+      ),
+      Park(
+        id: 'p3',
+        locId: 'l3',
+        name: 'Остров Чудес',
+        openedAt: DateTime(2018, 7, 15),
+      ),
       Park(id: 'p4', locId: 'l4', name: 'Казань-Фан'),
       Park(id: 'p5', locId: 'l5', name: 'Южная Ривьера'),
     ],
@@ -48,12 +64,6 @@ Map<String, dynamic> buildSeed() {
       Ride(id: 'r13', parkId: 'p4', name: 'Экстрим-аттракцион «Вертикаль»', type: RideType.extreme, year: 2023, status: RideStatus.downtime),
       Ride(id: 'r14', parkId: 'p5', name: 'Волновые качели «Прибой»', type: RideType.swing, year: 2017, status: RideStatus.active),
       Ride(id: 'r15', parkId: 'p5', name: 'Колесо обозрения «Солнце»', type: RideType.ferris, year: 2016, status: RideStatus.active),
-    ],
-    'techs': [
-      Technician(id: 't1', name: 'Иванов Иван', role: 'Старший механик', phone: '+7 900 111-22-33'),
-      Technician(id: 't2', name: 'Петров Пётр', role: 'Электромеханик', phone: '+7 900 222-33-44'),
-      Technician(id: 't3', name: 'Сидорова Анна', role: 'Инженер по диагностике', phone: '+7 900 333-44-55'),
-      Technician(id: 't4', name: 'Кузнецов Дмитрий', role: 'Механик', phone: '+7 900 444-55-66'),
     ],
     'downtimes': [
       Downtime(id: 'd1', rideId: 'r2', reason: DowntimeReason.repair, techId: 't1', start: h(26), comment: 'Замена оси опорных катков, обнаружен износ сверх допуска'),
@@ -81,68 +91,125 @@ Map<String, dynamic> buildSeed() {
       Incident(id: 'i13', rideId: 'r7', type: IncidentType.defect, severity: Severity.minor, status: IncidentStatus.inProgress, techId: 't3', ts: d(5), desc: 'Люфт поручня'),
       Incident(id: 'i14', rideId: 'r1', type: IncidentType.minor, severity: Severity.minor, status: IncidentStatus.isNew, techId: 't2', ts: h(12), desc: 'Кратковременная остановка привода'),
     ],
-
-'operators': [
-  Operator(id: 'op1', name: 'Алексей Смирнов', phone: '+7 900 555-11-22', pin: '1111'),
-  Operator(id: 'op2', name: 'Мария Орлова', phone: '+7 900 555-33-44', pin: '2222'),
-  Operator(id: 'op3', name: 'Денис Волков', phone: '+7 900 555-55-66', pin: '3333'),
-  Operator(id: 'op4', name: 'Ольга Никитина', phone: '+7 900 555-77-88', pin: '4444'),
-],
-
-'vacancies': [],
-'applications': [],
-
-
-'regions': [
-  Region(id: 'reg1', name: 'Москва Юг', parkIds: ['p1', 'p2']),
-  Region(id: 'reg2', name: 'Москва Север', parkIds: []),
-  Region(id: 'reg3', name: 'Санкт-Петербург', parkIds: ['p3']),
-  Region(id: 'reg4', name: 'Казань', parkIds: ['p4']),
-  Region(id: 'reg5', name: 'Сочи', parkIds: ['p5']),
-],
-'admins': [
-  ParkAdmin(
-    id: 'adm0',
-    name: 'Владелец',
-    pin: '9999',
-    role: AdminRole.superAdmin,
-  ),
-  ParkAdmin(
-    id: 'adm1',
-    name: 'Ирина Соколова',
-    pin: '0000',
-    role: AdminRole.regionalAdmin,
-    regionId: 'reg1',
-  ),
-  ParkAdmin(
-    id: 'adm2',
-    name: 'Олег Кузнецов',
-    pin: '1000',
-    role: AdminRole.parkAdmin,
-    parkId: 'p1',
-  ),
-  ParkAdmin(
-    id: 'adm3',
-    name: 'Елена Морозова',
-    pin: '2000',
-    role: AdminRole.parkAdmin,
-    parkId: 'p2',
-  ),
-],
-
+    'employees': [
+      // Super
+      Employee(
+        id: 'adm0',
+        name: 'Владелец',
+        pin: '9999',
+        role: EmployeeRole.superAdmin,
+      ),
+      // Regional admin
+      Employee(
+        id: 'adm1',
+        name: 'Ирина Соколова',
+        phone: '+7 900 100-00-00',
+        pin: '0000',
+        role: EmployeeRole.regionalAdmin,
+        regionId: 'reg1',
+        jobTitle: 'Региональный директор',
+      ),
+      // Park admins
+      Employee(
+        id: 'adm2',
+        name: 'Олег Кузнецов',
+        phone: '+7 900 200-00-00',
+        pin: '1000',
+        role: EmployeeRole.parkAdmin,
+        parkId: 'p1',
+      ),
+      Employee(
+        id: 'adm3',
+        name: 'Елена Морозова',
+        phone: '+7 900 300-00-00',
+        pin: '2000',
+        role: EmployeeRole.parkAdmin,
+        parkId: 'p2',
+      ),
+      // Operators
+      Employee(
+        id: 'op1',
+        name: 'Алексей Смирнов',
+        phone: '+7 900 555-11-22',
+        pin: '1111',
+        role: EmployeeRole.operator,
+      ),
+      Employee(
+        id: 'op2',
+        name: 'Мария Орлова',
+        phone: '+7 900 555-33-44',
+        pin: '2222',
+        role: EmployeeRole.operator,
+      ),
+      Employee(
+        id: 'op3',
+        name: 'Денис Волков',
+        phone: '+7 900 555-55-66',
+        pin: '3333',
+        role: EmployeeRole.operator,
+      ),
+      Employee(
+        id: 'op4',
+        name: 'Ольга Никитина',
+        phone: '+7 900 555-77-88',
+        pin: '4444',
+        role: EmployeeRole.operator,
+      ),
+      // Technicians
+      Employee(
+        id: 't1',
+        name: 'Иванов Иван',
+        phone: '+7 900 111-22-33',
+        pin: '0001',
+        role: EmployeeRole.technician,
+        jobTitle: 'Старший механик',
+      ),
+      Employee(
+        id: 't2',
+        name: 'Петров Пётр',
+        phone: '+7 900 222-33-44',
+        pin: '0002',
+        role: EmployeeRole.technician,
+        jobTitle: 'Электромеханик',
+      ),
+      Employee(
+        id: 't3',
+        name: 'Сидорова Анна',
+        phone: '+7 900 333-44-55',
+        pin: '0003',
+        role: EmployeeRole.technician,
+        jobTitle: 'Инженер по диагностике',
+      ),
+      Employee(
+        id: 't4',
+        name: 'Кузнецов Дмитрий',
+        phone: '+7 900 444-55-66',
+        pin: '0004',
+        role: EmployeeRole.technician,
+        jobTitle: 'Механик',
+      ),
+    ],
+    'regions': [
+      Region(id: 'reg1', name: 'Москва Юг', parkIds: ['p1', 'p2']),
+      Region(id: 'reg2', name: 'Москва Север', parkIds: []),
+      Region(id: 'reg3', name: 'Санкт-Петербург', parkIds: ['p3']),
+      Region(id: 'reg4', name: 'Казань', parkIds: ['p4']),
+      Region(id: 'reg5', name: 'Сочи', parkIds: ['p5']),
+    ],
     'operatorLinks': [
-  OperatorParkLink(id: 'lnk1', operatorId: 'op1', parkId: 'p1',
-      status: LinkStatus.approved, initiatorAdminId: 'adm1',
-      approverAdminId: 'adm2', approvedAt: DateTime.now()),
-  OperatorParkLink(id: 'lnk2', operatorId: 'op2', parkId: 'p1',
-      status: LinkStatus.approved, initiatorAdminId: 'adm1',
-      approverAdminId: 'adm2', approvedAt: DateTime.now()),
-  OperatorParkLink(id: 'lnk3', operatorId: 'op3', parkId: 'p2',
-      status: LinkStatus.approved, initiatorAdminId: 'adm3',
-      approvedAt: DateTime.now()),
-  OperatorParkLink(id: 'lnk4', operatorId: 'op4', parkId: 'p3',
-      status: LinkStatus.approved, approvedAt: DateTime.now()),
-],
-    
+      OperatorParkLink(id: 'lnk1', operatorId: 'op1', parkId: 'p1',
+          status: LinkStatus.approved, initiatorAdminId: 'adm1',
+          approverAdminId: 'adm2', approvedAt: DateTime.now()),
+      OperatorParkLink(id: 'lnk2', operatorId: 'op2', parkId: 'p1',
+          status: LinkStatus.approved, initiatorAdminId: 'adm1',
+          approverAdminId: 'adm2', approvedAt: DateTime.now()),
+      OperatorParkLink(id: 'lnk3', operatorId: 'op3', parkId: 'p2',
+          status: LinkStatus.approved, initiatorAdminId: 'adm2',
+          approvedAt: DateTime.now()),
+      OperatorParkLink(id: 'lnk4', operatorId: 'op4', parkId: 'p3',
+          status: LinkStatus.approved, approvedAt: DateTime.now()),
+    ],
+    'vacancies': [],
+    'applications': [],
   };
 }
