@@ -89,17 +89,17 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
     return db.employees.where((e) {
       if (_section == 'operators') {
-        if (e.role != EmployeeRole.operator &&
-            e.role != EmployeeRole.parkAdmin &&
-            e.role != EmployeeRole.regionalAdmin &&
-            e.role != EmployeeRole.superAdmin) {
+        if (!e.hasRole(EmployeeRole.operator) &&
+            !e.hasRole(EmployeeRole.parkAdmin) &&
+            !e.hasRole(EmployeeRole.regionalAdmin) &&
+            !e.hasRole(EmployeeRole.superAdmin)) {
           return false;
         }
       } else if (_section == 'technicians') {
-        if (e.role != EmployeeRole.technician) return false;
+        if (!e.hasRole(EmployeeRole.technician)) return false;
       }
 
-      if (_filterRole != null && e.role != _filterRole) return false;
+      if (_filterRole != null && !e.hasRole(_filterRole!)) return false;
 
       if (me.role != EmployeeRole.superAdmin) {
         final inMyRegion = (e.regionId != null &&
@@ -107,7 +107,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             (e.parkId != null &&
                 db.regionsOfPark(e.parkId!).any(
                     (r) => visibleRegionIds.contains(r.id))) ||
-            (e.role == EmployeeRole.operator &&
+            (e.hasRole(EmployeeRole.operator) &&
                 _approvedParkIds(e).any((pid) => db
                     .regionsOfPark(pid)
                     .any((r) => visibleRegionIds.contains(r.id))));
@@ -121,7 +121,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         if (region == null) return false;
         final inRegion = (e.regionId == _filterRegionId) ||
             (e.parkId != null && region.parkIds.contains(e.parkId!)) ||
-            (e.role == EmployeeRole.operator &&
+            (e.hasRole(EmployeeRole.operator) &&
                 _approvedParkIds(e)
                     .any((pid) => region.parkIds.contains(pid)));
         if (!inRegion) return false;
@@ -153,7 +153,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       final loc = db.locById(park.locId);
       return loc?.cityId == cityId;
     }
-    if (e.role == EmployeeRole.operator) {
+    if (e.hasRole(EmployeeRole.operator)) {
       for (final pid in _approvedParkIds(e)) {
         final park = db.parkById(pid);
         if (park == null) continue;
@@ -166,7 +166,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   }
 
   List<String> _approvedParkIds(Employee e) {
-    if (e.role == EmployeeRole.operator) {
+    if (e.hasRole(EmployeeRole.operator)) {
       return db
           .linksForOperator(e.id)
           .where((l) => l.status == LinkStatus.approved)
@@ -267,7 +267,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     return InkWell(
       onTap: () => setState(() {
         _section = key;
-        _filterRole = null; // Сбрасываем фильтр ролей при смене вкладки
+        _filterRole = null;
         _collapsedTree.clear();
         _collapsedRegions.clear();
         _collapsedCities.clear();
@@ -305,7 +305,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       decoration: _cardDeco,
       child:
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // ─── Роли ───
         const Text('Роли',
             style: TextStyle(
                 fontSize: 10,
@@ -324,8 +323,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           ],
         ]),
         const SizedBox(height: 8),
-
-        // ─── Статусы ───
         Wrap(spacing: 4, runSpacing: 4, children: [
           _statusChip('Все', null),
           _statusChip('Работают', EmployeeStatus.active),
@@ -334,8 +331,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           _statusChip('Уволены', EmployeeStatus.fired),
         ]),
         const SizedBox(height: 8),
-
-        // ─── Локация ───
         LayoutBuilder(builder: (c, box) {
           final cols = box.maxWidth > 600 ? 2 : 1;
           final w = (box.maxWidth - (cols - 1) * 6) / cols;
@@ -386,8 +381,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           ]);
         }),
         const SizedBox(height: 8),
-
-        // ─── Поиск ───
         TextField(
           controller: _searchCtrl,
           onChanged: (v) => setState(() => _query = v),
@@ -441,15 +434,15 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     final all = _filteredAll();
 
     final supers = _section == 'operators'
-        ? all.where((e) => e.role == EmployeeRole.superAdmin).toList()
+        ? all.where((e) => e.hasRole(EmployeeRole.superAdmin)).toList()
         : <Employee>[];
     final regionals = _section == 'operators'
-        ? all.where((e) => e.role == EmployeeRole.regionalAdmin).toList()
+        ? all.where((e) => e.hasRole(EmployeeRole.regionalAdmin)).toList()
         : <Employee>[];
     final workers = all
         .where((e) =>
-            e.role != EmployeeRole.superAdmin &&
-            e.role != EmployeeRole.regionalAdmin)
+            !e.hasRole(EmployeeRole.superAdmin) &&
+            !e.hasRole(EmployeeRole.regionalAdmin))
         .toList();
 
     final grouped =
@@ -665,7 +658,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 children: [
                   ...regionAdmins.map((a) => Padding(
                         padding: const EdgeInsets.only(bottom: 2),
-                        child: _employeeRow(a, roleOverride: 'Рег. админ'),
+                        child: _employeeRow(a),
                       )),
                   ...cityKeys.map((ck) => _cityBlock(ck, cities[ck]!)),
                   if (cityKeys.isEmpty && regionAdmins.isEmpty)
@@ -812,8 +805,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   if (parkAdmin != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 2),
-                      child: _employeeRow(parkAdmin,
-                          roleOverride: 'Админ парка'),
+                      child: _employeeRow(parkAdmin),
                     ),
                   ...others.map((e) => _employeeRow(e)).toList(),
                 ],
@@ -1019,19 +1011,25 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                                 overflow: TextOverflow.ellipsis),
                           ),
                           const SizedBox(width: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Color(e.role.colorValue)
-                                  .withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                            child: Text(e.role.label,
-                                style: TextStyle(
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(e.role.colorValue))),
+                          Wrap(
+                            spacing: 3,
+                            children: [
+                              for (final r in e.allRoles)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: Color(r.colorValue)
+                                        .withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: Text(r.label,
+                                      style: TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(r.colorValue))),
+                                ),
+                            ],
                           ),
                           const SizedBox(width: 4),
                           Container(
@@ -1089,10 +1087,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   // ═══════════ КРАСИВАЯ СТРОКА СОТРУДНИКА ═══════════
 
-  Widget _employeeRow(Employee e, {String? roleOverride}) {
+  Widget _employeeRow(Employee e) {
     final color = Color(e.status.colorValue);
-    final roleColor = Color(e.role.colorValue);
-    final roleLabel = roleOverride ?? e.role.label;
 
     return InkWell(
       onTap: () => _showEmployeeCard(e),
@@ -1110,7 +1106,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
               width: 30,
               height: 30,
               decoration: BoxDecoration(
-                color: roleColor.withValues(alpha: 0.15),
+                color: Color(e.role.colorValue).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(7),
               ),
               child: Center(
@@ -1119,7 +1115,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: roleColor),
+                      color: Color(e.role.colorValue)),
                 ),
               ),
             ),
@@ -1138,20 +1134,28 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   const SizedBox(height: 2),
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: roleColor.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          roleLabel,
-                          style: TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w700,
-                              color: roleColor),
-                        ),
+                      Wrap(
+                        spacing: 3,
+                        runSpacing: 2,
+                        children: [
+                          for (final r in e.allRoles)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Color(r.colorValue)
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                r.label,
+                                style: TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(r.colorValue)),
+                              ),
+                            ),
+                        ],
                       ),
                       if (e.jobTitle != null &&
                           e.jobTitle!.isNotEmpty) ...[
@@ -1206,7 +1210,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         builder: (ctx, setS) {
           final current = db.employeeById(emp.id) ?? emp;
           final color = Color(current.status.colorValue);
-          final roleColor = Color(current.role.colorValue);
           final canManage = _canManage(current);
 
           return DraggableScrollableSheet(
@@ -1237,8 +1240,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _cardHeader(
-                              current, roleColor, color, canManage, setS),
+                          _cardHeader(current, color, canManage, setS),
                           const SizedBox(height: 14),
                           _infoSection(current, canManage, setS),
                           const SizedBox(height: 12),
@@ -1282,14 +1284,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
   }
 
-  Widget _cardHeader(Employee e, Color roleColor, Color statusColor,
+  Widget _cardHeader(Employee e, Color statusColor,
       bool canManage, StateSetter setS) {
     return Row(children: [
       Container(
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: roleColor.withValues(alpha: 0.15),
+          color: Color(e.role.colorValue).withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Center(
@@ -1297,7 +1299,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: roleColor)),
+                  color: Color(e.role.colorValue))),
         ),
       ),
       const SizedBox(width: 12),
@@ -1316,19 +1318,28 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             ],
             const SizedBox(height: 4),
             Wrap(spacing: 4, runSpacing: 4, children: [
-              _badge(e.role.label, roleColor),
+              for (final r in e.allRoles)
+                _badge(r.label, Color(r.colorValue)),
               _badge(e.status.label, statusColor),
             ]),
           ],
         ),
       ),
-      if (canManage)
+      if (canManage) ...[
+        if (!e.role.canBeAdmin)
+          IconButton(
+            icon: const Icon(Icons.manage_accounts, size: 18),
+            tooltip: 'Управлять ролями',
+            color: AppColors.cyn,
+            onPressed: () => _manageRoles(e, setS),
+          ),
         IconButton(
           icon: const Icon(Icons.edit_outlined, size: 18),
           tooltip: 'Редактировать',
           color: AppColors.mut,
           onPressed: () => _editEmployee(e, setS),
         ),
+      ],
     ]);
   }
 
@@ -1640,7 +1651,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   Widget _actionsGrid(Employee e, StateSetter setS) {
     final hasWorkplace = _approvedParkIds(e).isNotEmpty || e.regionId != null;
-    final roleChanges = _allowedRoleChanges(e);
     final canChangeWorkplace = e.role == EmployeeRole.regionalAdmin ||
         e.role == EmployeeRole.parkAdmin ||
         e.role == EmployeeRole.technician ||
@@ -1664,12 +1674,12 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           color: AppColors.cyn,
           onTap: () => _changeWorkplace(e, setS),
         ),
-      if (roleChanges.isNotEmpty)
+      if (!e.role.canBeAdmin && e.id != me.id)
         _actionBtn(
-          icon: Icons.swap_horiz,
-          label: 'Сменить роль',
+          icon: Icons.manage_accounts,
+          label: 'Роли',
           color: AppColors.pur,
-          onTap: () => _changeRole(e, setS),
+          onTap: () => _manageRoles(e, setS),
         ),
       if (hasWorkplace)
         _actionBtn(
@@ -1723,6 +1733,237 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         ]),
       ),
     );
+  }
+
+  // ═══════════ управление ролями (мультироль) ═══════════
+
+  Future<void> _manageRoles(Employee e, StateSetter setS) async {
+    if (e.role.canBeAdmin) {
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.panel,
+          title: const Text('Роли'),
+          content: Text(
+            'Для административных ролей управление дополнительными ролями не предусмотрено.\n\nТекущая роль: ${e.role.label}',
+            style: const TextStyle(fontSize: 13, color: AppColors.mut),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Закрыть')),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final allRoles = [
+      EmployeeRole.operator,
+      EmployeeRole.technician,
+      EmployeeRole.parkAdmin,
+    ];
+
+    EmployeeRole primary = e.role;
+    final Set<EmployeeRole> extras = Set.from(e.additionalRoles);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS2) {
+          return AlertDialog(
+            backgroundColor: AppColors.panel,
+            title: Text('Роли · ${e.name}'),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Основная роль',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.dim,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    for (final r in allRoles)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: InkWell(
+                          onTap: () {
+                            setS2(() {
+                              if (primary == r) return;
+                              if (!primary.canBeAdmin) {
+                                extras.add(primary);
+                              }
+                              primary = r;
+                              extras.remove(r);
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: primary == r
+                                  ? Color(r.colorValue)
+                                      .withValues(alpha: 0.12)
+                                  : Colors.transparent,
+                              border: Border.all(
+                                  color: primary == r
+                                      ? Color(r.colorValue)
+                                          .withValues(alpha: 0.4)
+                                      : AppColors.line2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(children: [
+                              Icon(
+                                  primary == r
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_off,
+                                  size: 18,
+                                  color: primary == r
+                                      ? Color(r.colorValue)
+                                      : AppColors.dim),
+                              const SizedBox(width: 8),
+                              Text(r.label,
+                                  style: const TextStyle(fontSize: 13)),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    const Text('Дополнительные роли',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.dim,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    for (final r in allRoles)
+                      if (r != primary)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: InkWell(
+                            onTap: () {
+                              setS2(() {
+                                if (extras.contains(r)) {
+                                  extras.remove(r);
+                                } else {
+                                  extras.add(r);
+                                }
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: extras.contains(r)
+                                    ? AppColors.cyn.withValues(alpha: 0.08)
+                                    : Colors.transparent,
+                                border: Border.all(
+                                    color: extras.contains(r)
+                                        ? AppColors.cyn
+                                            .withValues(alpha: 0.4)
+                                        : AppColors.line2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(children: [
+                                Icon(
+                                    extras.contains(r)
+                                        ? Icons.check_box
+                                        : Icons.check_box_outline_blank,
+                                    size: 18,
+                                    color: extras.contains(r)
+                                        ? AppColors.cyn
+                                        : AppColors.dim),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(r.label,
+                                      style:
+                                          const TextStyle(fontSize: 13)),
+                                ),
+                              ]),
+                            ),
+                          ),
+                        ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Отмена')),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.amb,
+                    foregroundColor: const Color(0xFF1C1204)),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Сохранить'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (ok != true) return;
+
+    final now = DateTime.now();
+    final oldPrimary = e.role;
+    final oldExtras = List<EmployeeRole>.from(e.additionalRoles);
+
+    if (oldPrimary != primary) {
+      for (final h in e.history) {
+        if (h.isCurrent) {
+          h.endedAt = now;
+          h.reason = 'Смена основной роли: ${oldPrimary.label} → ${primary.label}';
+        }
+      }
+      e.history.add(RoleHistoryEntry(
+        id: _uid(),
+        role: primary,
+        parkId: e.parkId,
+        regionId: e.regionId,
+        startedAt: now,
+      ));
+    }
+
+    e.role = primary;
+    e.additionalRoles = extras.toList();
+
+    for (final r in extras) {
+      if (!oldExtras.contains(r)) {
+        e.history.add(RoleHistoryEntry(
+          id: _uid(),
+          role: r,
+          parkId: e.parkId,
+          regionId: e.regionId,
+          startedAt: now,
+          reason: 'Добавлена дополнительная роль',
+        ));
+      }
+    }
+
+    for (final r in oldExtras) {
+      if (!extras.contains(r) && r != primary) {
+        for (final h in e.history) {
+          if (h.isCurrent && h.role == r) {
+            h.endedAt = now;
+            h.reason = 'Снята дополнительная роль';
+          }
+        }
+      }
+    }
+
+    await db.save();
+    setS(() {});
+    _snack('Роли обновлены');
   }
 
   // ═══════════ смена руководителя ═══════════
@@ -1884,270 +2125,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     _snack('Руководитель обновлён');
   }
 
-  // ═══════════ смена роли ═══════════
-
-  List<EmployeeRole> _allowedRoleChanges(Employee e) {
-    final list = <EmployeeRole>[];
-    if (e.id == me.id) return list;
-    if (e.role == EmployeeRole.superAdmin) return list;
-    if (e.role == EmployeeRole.regionalAdmin) return list;
-
-    if (me.role == EmployeeRole.superAdmin) {
-      if (e.role == EmployeeRole.operator) {
-        list.addAll([EmployeeRole.technician, EmployeeRole.parkAdmin]);
-      } else if (e.role == EmployeeRole.technician) {
-        list.addAll([EmployeeRole.operator, EmployeeRole.parkAdmin]);
-      } else if (e.role == EmployeeRole.parkAdmin) {
-        list.addAll([EmployeeRole.operator, EmployeeRole.technician]);
-      }
-    } else if (me.role == EmployeeRole.regionalAdmin) {
-      if (e.role == EmployeeRole.operator) {
-        list.add(EmployeeRole.technician);
-      } else if (e.role == EmployeeRole.technician) {
-        list.add(EmployeeRole.operator);
-      }
-    }
-    return list;
-  }
-
-  Future<void> _changeRole(Employee e, StateSetter setS) async {
-    final allowed = _allowedRoleChanges(e);
-    if (allowed.isEmpty) {
-      _snack('Нельзя сменить роль');
-      return;
-    }
-    EmployeeRole selected = allowed.first;
-
-    final ok = await showDialog<bool>(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS2) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: Text('Сменить роль · ${e.name}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Сейчас: ${e.role.label}',
-                  style:
-                      const TextStyle(fontSize: 11, color: AppColors.dim)),
-              const SizedBox(height: 12),
-              for (final r in allowed)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: InkWell(
-                    onTap: () => setS2(() => selected = r),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: selected == r
-                            ? AppColors.pur.withValues(alpha: 0.12)
-                            : Colors.transparent,
-                        border: Border.all(
-                            color: selected == r
-                                ? AppColors.pur.withValues(alpha: 0.4)
-                                : AppColors.line2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(children: [
-                        Icon(
-                            selected == r
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_off,
-                            size: 18,
-                            color: selected == r
-                                ? AppColors.pur
-                                : AppColors.dim),
-                        const SizedBox(width: 8),
-                        Text(r.label,
-                            style: const TextStyle(fontSize: 13)),
-                      ]),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Далее'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true) return;
-
-    final parkId = await _pickPark(e);
-    if (parkId == null) return;
-
-    final now = DateTime.now();
-    final oldRole = e.role;
-
-    for (final h in e.history) {
-      if (h.isCurrent) {
-        h.endedAt = now;
-        h.reason = 'Смена роли: ${oldRole.label} → ${selected.label}';
-      }
-    }
-
-    if (oldRole == EmployeeRole.operator) {
-      for (final l in db.linksForOperator(e.id).toList()) {
-        l.status = LinkStatus.rejected;
-      }
-    }
-
-    e.role = selected;
-    e.status = EmployeeStatus.active;
-    e.statusChangedAt = now;
-    e.regionId = null;
-
-    if (selected == EmployeeRole.operator) {
-      e.parkId = null;
-      db.createLinkRequest(e.id, parkId, initiatorAdminId: me.id);
-      final created = db
-          .linksForOperator(e.id)
-          .firstWhere((l) => l.parkId == parkId);
-      db.approveLink(created.id, me.id);
-    } else {
-      e.parkId = parkId;
-    }
-
-    final park = db.parkById(parkId);
-    if (park != null) {
-      final loc = db.locById(park.locId);
-      if (loc != null) e.lastCityId = loc.cityId;
-      final parkAdmin = db.parkAdminsOf(parkId).firstOrNull;
-      if (parkAdmin != null && parkAdmin.id != e.id) {
-        e.managerId = parkAdmin.id;
-      }
-    }
-
-    e.history.add(RoleHistoryEntry(
-      id: _uid(),
-      role: selected,
-      parkId: parkId,
-      startedAt: now,
-    ));
-
-    await db.save();
-    setS(() {});
-    _snack('Роль изменена на ${selected.label}');
-  }
-
-  Future<String?> _pickPark(Employee e) async {
-    final cities = List<City>.from(db.cities)
-      ..sort((a, b) => a.name.compareTo(b.name));
-    if (cities.isEmpty) {
-      _snack('В базе нет городов');
-      return null;
-    }
-
-    final currentParkIds = _approvedParkIds(e);
-    String? initialCityId;
-    if (currentParkIds.isNotEmpty) {
-      final p = db.parkById(currentParkIds.first);
-      if (p != null) {
-        final l = db.locById(p.locId);
-        initialCityId = l?.cityId;
-      }
-    }
-
-    String? cityId = initialCityId ?? cities.first.id;
-    String? parkId = currentParkIds.isNotEmpty ? currentParkIds.first : null;
-
-    return showDialog<String>(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS2) {
-          final locs =
-              db.locations.where((l) => l.cityId == cityId).toList();
-          final parks = <Park>[];
-          for (final l in locs) {
-            parks.addAll(db.parks.where((p) => p.locId == l.id));
-          }
-          if (parkId == null || !parks.any((p) => p.id == parkId)) {
-            parkId = parks.isEmpty ? null : parks.first.id;
-          }
-
-          return AlertDialog(
-            backgroundColor: AppColors.panel,
-            title: const Text('Выберите парк'),
-            content: SizedBox(
-              width: 440,
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: cityId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Город'),
-                    items: [
-                      for (final c in cities)
-                        DropdownMenuItem(value: c.id, child: Text(c.name)),
-                    ],
-                    onChanged: (v) => setS2(() {
-                      cityId = v;
-                      parkId = null;
-                    }),
-                  ),
-                  const SizedBox(height: 10),
-                  if (parks.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Text('В этом городе нет парков',
-                          style: TextStyle(
-                              fontSize: 11, color: AppColors.amb)),
-                    )
-                  else
-                    DropdownButtonFormField<String>(
-                      initialValue: parkId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Парк'),
-                      items: [
-                        for (final p in parks)
-                          DropdownMenuItem(
-                              value: p.id, child: Text(p.name)),
-                      ],
-                      onChanged: (v) => setS2(() => parkId = v),
-                    ),
-                ]),
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Отмена')),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.amb,
-                    foregroundColor: const Color(0xFF1C1204)),
-                onPressed: () {
-                  if (parkId == null) {
-                    _snack('Выберите парк');
-                    return;
-                  }
-                  Navigator.pop(ctx, parkId);
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+  // ═══════════ смена места работы ═══════════
 
   Future<void> _detachWorkplace(Employee e, StateSetter setS) async {
     final ok = await showDialog<bool>(
@@ -2185,7 +2163,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       }
     }
 
-    if (e.role == EmployeeRole.operator) {
+    if (e.hasRole(EmployeeRole.operator)) {
       for (final l in db.linksForOperator(e.id).toList()) {
         l.status = LinkStatus.rejected;
       }
@@ -2339,7 +2317,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       }
     }
 
-    if (e.role == EmployeeRole.operator) {
+    if (e.hasRole(EmployeeRole.operator)) {
       for (final l in db.linksForOperator(e.id).toList()) {
         if (l.status == LinkStatus.approved) {
           l.status = LinkStatus.rejected;
@@ -2605,7 +2583,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           h.reason = 'Уволен';
         }
       }
-      if (e.role == EmployeeRole.operator) {
+      if (e.hasRole(EmployeeRole.operator)) {
         for (final l in db.linksForOperator(e.id).toList()) {
           l.status = LinkStatus.rejected;
         }
@@ -2647,7 +2625,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         h.reason = 'Уволен';
       }
     }
-    if (e.role == EmployeeRole.operator) {
+    if (e.hasRole(EmployeeRole.operator)) {
       for (final l in db.linksForOperator(e.id).toList()) {
         l.status = LinkStatus.rejected;
       }
