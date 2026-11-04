@@ -3,6 +3,7 @@ import '../models/models.dart';
 import '../models/operator.dart';
 import '../models/park_admin.dart';
 import '../models/operator_park_link.dart';
+import '../models/region.dart';
 
 
 Map<String, dynamic> buildSeed() {
@@ -87,11 +88,6 @@ Map<String, dynamic> buildSeed() {
   Operator(id: 'op3', name: 'Денис Волков', phone: '+7 900 555-55-66', pin: '3333'),
   Operator(id: 'op4', name: 'Ольга Никитина', phone: '+7 900 555-77-88', pin: '4444'),
 ],
-'admins': [
-  ParkAdmin(id: 'adm1', name: 'Ирина Соколова', pin: '0000', parkId: 'p1'),
-  ParkAdmin(id: 'adm2', name: 'Олег Кузнецов', pin: '1000', parkId: 'p1'),
-  ParkAdmin(id: 'adm3', name: 'Елена Морозова', pin: '2000', parkId: 'p2'),
-],
 'operatorLinks': [
   OperatorParkLink(id: 'lnk1', operatorId: 'op1', parkId: 'p1',
       status: LinkStatus.approved, initiatorAdminId: 'adm1',
@@ -107,6 +103,44 @@ Map<String, dynamic> buildSeed() {
 ],
 'vacancies': [],
 'applications': [],
+
+
+'regions': [
+  Region(id: 'reg1', name: 'Москва Юг', parkIds: ['p1', 'p2']),
+  Region(id: 'reg2', name: 'Москва Север', parkIds: []),
+  Region(id: 'reg3', name: 'Санкт-Петербург', parkIds: ['p3']),
+  Region(id: 'reg4', name: 'Казань', parkIds: ['p4']),
+  Region(id: 'reg5', name: 'Сочи', parkIds: ['p5']),
+],
+'admins': [
+  ParkAdmin(
+    id: 'adm0',
+    name: 'Владелец',
+    pin: '9999',
+    role: AdminRole.superAdmin,
+  ),
+  ParkAdmin(
+    id: 'adm1',
+    name: 'Ирина Соколова',
+    pin: '0000',
+    role: AdminRole.regionalAdmin,
+    regionId: 'reg1',
+  ),
+  ParkAdmin(
+    id: 'adm2',
+    name: 'Олег Кузнецов',
+    pin: '1000',
+    role: AdminRole.parkAdmin,
+    parkId: 'p1',
+  ),
+  ParkAdmin(
+    id: 'adm3',
+    name: 'Елена Морозова',
+    pin: '2000',
+    role: AdminRole.parkAdmin,
+    parkId: 'p2',
+  ),
+],
 
     
   };
