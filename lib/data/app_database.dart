@@ -146,6 +146,18 @@ class AppDatabase extends ChangeNotifier {
     }
     json ??= _seedJson();
     _apply(json);
+    // Если после загрузки операторов нет — заливаем seed (первый запуск или битые данные)
+    if (operators.isEmpty) {
+      _apply(_seedJson());
+    }
+    // Если админов нет — создаём дефолтного, иначе в админку не зайти
+    if (admins.isEmpty) {
+      admins.add(ParkAdmin(
+        id: 'adm-default',
+        name: 'Администратор',
+        pin: '0000',
+      ));
+    }
     notifyListeners();
   }
 
@@ -160,40 +172,51 @@ class AppDatabase extends ChangeNotifier {
   Map<String, dynamic> _seedJson() {
     final s = buildSeed();
     return {
-      'cities': (s['cities'] as List<City>).map((e) => e.toJson()).toList(),
-      'locations': (s['locations'] as List<ParkLocation>)
-          .map((e) => e.toJson())
-          .toList(),
-      'parks': (s['parks'] as List<Park>).map((e) => e.toJson()).toList(),
-      'rides': (s['rides'] as List<Ride>).map((e) => e.toJson()).toList(),
-      'techs':
-          (s['techs'] as List<Technician>).map((e) => e.toJson()).toList(),
-      'downtimes':
-          (s['downtimes'] as List<Downtime>).map((e) => e.toJson()).toList(),
-      'incidents':
-          (s['incidents'] as List<Incident>).map((e) => e.toJson()).toList(),
-      'operators':
-          (s['operators'] as List<Operator>).map((e) => e.toJson()).toList(),
-      'admins':
-          (s['admins'] as List<ParkAdmin>).map((e) => e.toJson()).toList(),
+      'cities': _safeList(s['cities'], (e) => (e as City).toJson()),
+      'locations': _safeList(s['locations'], (e) => (e as ParkLocation).toJson()),
+      'parks': _safeList(s['parks'], (e) => (e as Park).toJson()),
+      'rides': _safeList(s['rides'], (e) => (e as Ride).toJson()),
+      'techs': _safeList(s['techs'], (e) => (e as Technician).toJson()),
+      'downtimes': _safeList(s['downtimes'], (e) => (e as Downtime).toJson()),
+      'incidents': _safeList(s['incidents'], (e) => (e as Incident).toJson()),
+      'operators': _safeList(s['operators'], (e) => (e as Operator).toJson()),
+      'admins': _safeList(s['admins'], (e) => (e as ParkAdmin).toJson()),
     };
   }
 
+  /// Безопасный маппинг: возвращает [] если ключа нет или он не List.
+  static List<Map<String, dynamic>> _safeList(
+    dynamic raw,
+    Map<String, dynamic> Function(Object?) mapper,
+  ) {
+    if (raw is! List) return [];
+    return raw.map(mapper).toList();
+  }
+
   void _apply(Map<String, dynamic> j) {
-    cities = (j['cities'] as List).map((e) => City.fromJson(e)).toList();
-    locations =
-        (j['locations'] as List).map((e) => ParkLocation.fromJson(e)).toList();
-    parks = (j['parks'] as List).map((e) => Park.fromJson(e)).toList();
-    rides = (j['rides'] as List).map((e) => Ride.fromJson(e)).toList();
-    techs = (j['techs'] as List).map((e) => Technician.fromJson(e)).toList();
-    downtimes =
-        (j['downtimes'] as List).map((e) => Downtime.fromJson(e)).toList();
-    incidents =
-        (j['incidents'] as List).map((e) => Incident.fromJson(e)).toList();
-    operators =
-        ((j['operators'] as List?) ?? []).map((e) => Operator.fromJson(e)).toList();
+    cities = (j['cities'] as List?)?.map((e) => City.fromJson(e)).toList() ?? [];
+    locations = (j['locations'] as List?)
+            ?.map((e) => ParkLocation.fromJson(e))
+            .toList() ??
+        [];
+    parks = (j['parks'] as List?)?.map((e) => Park.fromJson(e)).toList() ?? [];
+    rides = (j['rides'] as List?)?.map((e) => Ride.fromJson(e)).toList() ?? [];
+    techs =
+        (j['techs'] as List?)?.map((e) => Technician.fromJson(e)).toList() ?? [];
+    downtimes = (j['downtimes'] as List?)
+            ?.map((e) => Downtime.fromJson(e))
+            .toList() ??
+        [];
+    incidents = (j['incidents'] as List?)
+            ?.map((e) => Incident.fromJson(e))
+            .toList() ??
+        [];
+    operators = (j['operators'] as List?)
+            ?.map((e) => Operator.fromJson(e))
+            .toList() ??
+        [];
     admins =
-        ((j['admins'] as List?) ?? []).map((e) => ParkAdmin.fromJson(e)).toList();
+        (j['admins'] as List?)?.map((e) => ParkAdmin.fromJson(e)).toList() ?? [];
     final sh = j['activeShift'];
     activeShift = sh is Map<String, dynamic> ? Shift.fromJson(sh) : null;
     opSelectingRides = j['opSelectingRides'] ?? false;
