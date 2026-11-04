@@ -313,7 +313,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     ]);
   }
 
-  // ═══════════ region card — чистое дерево ═══════════
+  // ═══════════ region card ═══════════
 
   Widget _regionCard(AppDatabase db, ParkAdmin admin, Region region,
       {bool isRegional = false}) {
@@ -325,7 +325,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: _cardDeco,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // Шапка региона
         InkWell(
           onTap: () => setState(() {
             if (expanded) {
@@ -368,8 +367,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             ]),
           ),
         ),
-
-        // Дерево
         if (expanded) ...[
           const Divider(height: 1, color: AppColors.line),
           Padding(
@@ -506,7 +503,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
   }
 
-  // ═══════════ bottom sheet — все действия региона ═══════════
+  // ═══════════ bottom sheet — меню региона ═══════════
 
   Future<void> _showRegionMenu(
       AppDatabase db, ParkAdmin admin, Region region) async {
@@ -563,11 +560,18 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                 subtitle: 'В существующем городе',
                 onTap: () => Navigator.pop(ctx, 'add-location'),
               ),
+              if (db.cities.isNotEmpty)
+                _menuItem(
+                  icon: Icons.location_city,
+                  title: 'Локацию с парком в существующий город',
+                  subtitle: 'Выбрать город из базы',
+                  onTap: () => Navigator.pop(ctx, 'add-existing-city'),
+                ),
               _menuItem(
-                icon: Icons.location_city,
+                icon: Icons.add_location_alt,
                 title: 'Новый город с локацией и парком',
-                subtitle: 'Всё сразу с нуля',
-                onTap: () => Navigator.pop(ctx, 'add-city'),
+                subtitle: 'Создать город с нуля',
+                onTap: () => Navigator.pop(ctx, 'add-new-city'),
               ),
               _menuItem(
                 icon: Icons.add_link,
@@ -622,8 +626,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       case 'add-location':
         await _addLocationWithPark(db, region);
         break;
-      case 'add-city':
-        await _addCityWithChain(db, region);
+      case 'add-existing-city':
+        await _addToExistingCity(db, region);
+        break;
+      case 'add-new-city':
+        await _addNewCityWithChain(db, region);
         break;
       case 'attach-park':
         await _attachExistingPark(db, region);
@@ -683,9 +690,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     );
   }
 
-  // ═══════════ создание — 4 сценария ═══════════
+  // ═══════════ создание — 5 сценариев ═══════════
 
-  /// Парк в существующую локацию
+  /// 1. Парк в существующую локацию (в регионе)
   Future<void> _addParkToExistingLoc(AppDatabase db, Region region) async {
     final cities = db.citiesOfRegion(region.id);
     if (cities.isEmpty) {
@@ -697,7 +704,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     String? locId;
     final parkCtrl = TextEditingController();
 
-    // Список локаций выбранного города
     List<ParkLocation> locsFor(String? cid) => cid == null
         ? []
         : db.locations.where((l) => l.cityId == cid).toList();
@@ -788,7 +794,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     _snack('Парк «$name» создан');
   }
 
-  /// Новая локация с парком в существующем городе
+  /// 2. Новая локация с парком в существующем (в регионе) городе
   Future<void> _addLocationWithPark(
       AppDatabase db, Region region) async {
     final cities = db.citiesOfRegion(region.id);
@@ -858,18 +864,207 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       _snack('Заполните все поля');
       return;
     }
-    final loc = ParkLocation(id: _uid(), cityId: cityId!, name: locName);
-    db.locations.add(loc);
+
+    // Проверка дубликата локации
+    final existingLoc = db.locations.firstWhere(
+      (l) =>
+          l.cityId == cityId &&
+          l.name.toLowerCase() == locName.toLowerCase(),
+      orElse: () => ParkLocation(id: '', cityId: '', name: ''),
+    );
+    ParkLocation loc;
+    if (existingLoc.id.isNotEmpty) {
+      // Локация уже есть — предупреждаем и используем её
+      if (!mounted) return;
+      final useExisting = await _askUseExistingLocation(
+          db, existingLoc, parkName);
+      if (useExisting != true) return;
+      loc = existingLoc;
+    } else {
+      loc = ParkLocation(id: _uid(), cityId: cityId!, name: locName);
+      db.locations.add(loc);
+    }
+
     final park = Park(id: _uid(), locId: loc.id, name: parkName);
     db.parks.add(park);
     db.addParkToRegion(region.id, park.id);
     await db.save();
     if (!mounted) return;
-    _snack('Создано: $locName → $parkName');
+    _snack('Парк «$parkName» создан');
   }
 
-  /// Новый город с локацией и парком
-  Future<void> _addCityWithChain(AppDatabase db, Region region) async {
+  /// 3. Локация с парком в существующем городе (город может быть не в регионе)
+  Future<void> _addToExistingCity(AppDatabase db, Region region) async {
+    if (db.cities.isEmpty) {
+      _snack('В базе нет городов');
+      return;
+    }
+
+    // Сначала — выбор города
+    String? cityId;
+    final citiesSorted = List<City>.from(db.cities)
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+    final pickedCity = await showDialog<City>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Выбрать город'),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Города из базы. Тап — выбрать.',
+                style: TextStyle(fontSize: 11, color: AppColors.dim),
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: citiesSorted.map((c) {
+                      final locsCount =
+                          db.locations.where((l) => l.cityId == c.id).length;
+                      final parksCount = db.parks.where((p) {
+                        final loc = db.locById(p.locId);
+                        return loc?.cityId == c.id;
+                      }).length;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.panel2,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: InkWell(
+                          onTap: () => Navigator.pop(ctx, c),
+                          child: Row(children: [
+                            const Icon(Icons.location_city,
+                                size: 16, color: AppColors.cyn),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(c.name,
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600)),
+                                    Text(
+                                      'локаций: $locsCount · парков: $parksCount',
+                                      style: const TextStyle(
+                                          fontSize: 10.5,
+                                          color: AppColors.dim),
+                                    ),
+                                  ]),
+                            ),
+                            const Icon(Icons.chevron_right,
+                                size: 16, color: AppColors.dim),
+                          ]),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена')),
+        ],
+      ),
+    );
+
+    if (pickedCity == null || !mounted) return;
+    cityId = pickedCity.id;
+
+    // Теперь — создание локации и парка в этом городе
+    final locCtrl = TextEditingController();
+    final parkCtrl = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.panel,
+          title: Text('Новая локация · ${pickedCity.name}'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                controller: locCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(
+                    labelText: 'Название локации *',
+                    hintText: 'Измайлово ПКиО'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: parkCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'Название парка *',
+                    hintText: 'Аттракционы «Солнышко»'),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Отмена')),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.amb,
+                  foregroundColor: const Color(0xFF1C1204)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Создать'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true || cityId == null) return;
+    final locName = locCtrl.text.trim();
+    final parkName = parkCtrl.text.trim();
+    if (locName.isEmpty || parkName.isEmpty) {
+      _snack('Заполните все поля');
+      return;
+    }
+
+    // Проверка дубликата локации
+    final existingLoc = db.locations.firstWhere(
+      (l) =>
+          l.cityId == cityId &&
+          l.name.toLowerCase() == locName.toLowerCase(),
+      orElse: () => ParkLocation(id: '', cityId: '', name: ''),
+    );
+    ParkLocation loc;
+    if (existingLoc.id.isNotEmpty) {
+      if (!mounted) return;
+      final useExisting = await _askUseExistingLocation(
+          db, existingLoc, parkName);
+      if (useExisting != true) return;
+      loc = existingLoc;
+    } else {
+      loc = ParkLocation(id: _uid(), cityId: cityId, name: locName);
+      db.locations.add(loc);
+    }
+
+    final park = Park(id: _uid(), locId: loc.id, name: parkName);
+    db.parks.add(park);
+    db.addParkToRegion(region.id, park.id);
+    await db.save();
+    if (!mounted) return;
+    _snack('Создано: ${pickedCity.name} → $locName → $parkName');
+  }
+
+  /// 4. Новый город с локацией и парком (с проверкой дубликата имени)
+  Future<void> _addNewCityWithChain(AppDatabase db, Region region) async {
     final cityCtrl = TextEditingController();
     final locCtrl = TextEditingController();
     final parkCtrl = TextEditingController();
@@ -887,7 +1082,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
         content: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Text(
-              'Создаётся цепочка: город → локация → парк. Парк сразу привязывается к региону.',
+              'Создаётся цепочка: город → локация → парк. Если город с таким именем уже есть — будет предупреждение.',
               style: TextStyle(fontSize: 11, color: AppColors.dim),
             ),
             const SizedBox(height: 14),
@@ -935,33 +1130,53 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       return;
     }
 
-    var city = db.cities.firstWhere(
+    // Проверка дубликата города
+    final existingCity = db.cities.firstWhere(
       (c) => c.name.toLowerCase() == cityName.toLowerCase(),
       orElse: () => City(id: '', name: ''),
     );
-    if (city.id.isEmpty) {
+    City city;
+    if (existingCity.id.isNotEmpty) {
+      if (!mounted) return;
+      final useExisting = await _askUseExistingCity(
+          db, existingCity, locName, parkName);
+      if (useExisting == null) return;
+      if (useExisting == false) return;
+      // useExisting == true → используем существующий город
+      city = existingCity;
+    } else {
       city = City(id: _uid(), name: cityName);
       db.cities.add(city);
     }
-    var loc = db.locations.firstWhere(
+
+    // Проверка дубликата локации
+    final existingLoc = db.locations.firstWhere(
       (l) =>
           l.cityId == city.id &&
           l.name.toLowerCase() == locName.toLowerCase(),
       orElse: () => ParkLocation(id: '', cityId: '', name: ''),
     );
-    if (loc.id.isEmpty) {
+    ParkLocation loc;
+    if (existingLoc.id.isNotEmpty) {
+      if (!mounted) return;
+      final useExistingLoc = await _askUseExistingLocation(
+          db, existingLoc, parkName);
+      if (useExistingLoc != true) return;
+      loc = existingLoc;
+    } else {
       loc = ParkLocation(id: _uid(), cityId: city.id, name: locName);
       db.locations.add(loc);
     }
+
     final park = Park(id: _uid(), locId: loc.id, name: parkName);
     db.parks.add(park);
     db.addParkToRegion(region.id, park.id);
     await db.save();
     if (!mounted) return;
-    _snack('Создано: $cityName → $locName → $parkName');
+    _snack('Создано: ${city.name} → ${loc.name} → $parkName');
   }
 
-  /// Привязать существующий парк (может быть в другом регионе)
+  /// 5. Привязать существующий парк
   Future<void> _attachExistingPark(AppDatabase db, Region region) async {
     final candidates = db.parks
         .where((p) => !region.parkIds.contains(p.id))
@@ -1043,6 +1258,96 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       ),
     );
     setState(() {});
+  }
+
+  // ═══════════ confirm helpers ═══════════
+
+  /// Спрашивает: использовать существующий город? Возвращает true (использовать),
+  /// false (отмена), null (создать новый с другим именем — не поддерживается,
+  /// потому что имя уже занято).
+  Future<bool?> _askUseExistingCity(AppDatabase db, City city,
+      String locName, String parkName) async {
+    final locsCount =
+        db.locations.where((l) => l.cityId == city.id).length;
+    final parksCount = db.parks.where((p) {
+      final loc = db.locById(p.locId);
+      return loc?.cityId == city.id;
+    }).length;
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Город уже существует'),
+        content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'В базе уже есть город «${city.name}». Локаций: $locsCount, парков: $parksCount.',
+                style: const TextStyle(fontSize: 13, color: AppColors.mut),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Использовать его для создания новой локации и парка?',
+                style: TextStyle(fontSize: 12.5),
+              ),
+            ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Использовать этот город'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Спрашивает: использовать существующую локацию?
+  Future<bool?> _askUseExistingLocation(AppDatabase db,
+      ParkLocation loc, String parkName) async {
+    final parksCount =
+        db.parks.where((p) => p.locId == loc.id).length;
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Локация уже существует'),
+        content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'В этом городе уже есть локация «${loc.name}». Парков в ней: $parksCount.',
+                style: const TextStyle(fontSize: 13, color: AppColors.mut),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Создать парк «$parkName» в этой локации?',
+                style: const TextStyle(fontSize: 12.5),
+              ),
+            ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Использовать локацию'),
+          ),
+        ],
+      ),
+    );
   }
 
   // ═══════════ region dialogs ═══════════
