@@ -183,11 +183,11 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _viewSwitcher(),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         _sectionSwitcher(),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         _filtersCard(),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         _viewMode == 'list' ? _buildListBody() : _buildTreeBody(),
       ],
     );
@@ -195,10 +195,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   Widget _viewSwitcher() {
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: AppColors.panel2,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.line),
       ),
       child: Row(children: [
@@ -212,12 +212,12 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     final active = _viewMode == key;
     return InkWell(
       onTap: () => setState(() => _viewMode = key),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
           color: active ? AppColors.panel : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(
               color: active ? AppColors.line2 : Colors.transparent),
         ),
@@ -225,11 +225,11 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon,
-                size: 15, color: active ? AppColors.amb2 : AppColors.mut),
-            const SizedBox(width: 6),
+                size: 14, color: active ? AppColors.amb2 : AppColors.mut),
+            const SizedBox(width: 5),
             Text(label,
                 style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: active ? AppColors.amb2 : AppColors.mut)),
           ],
@@ -240,10 +240,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   Widget _sectionSwitcher() {
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: AppColors.panel2,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.line),
       ),
       child: Row(children: [
@@ -268,12 +268,12 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         _collapsedCities.clear();
         _collapsedParks.clear();
       }),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
           color: active ? AppColors.panel : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(
               color: active ? AppColors.line2 : Colors.transparent),
         ),
@@ -281,11 +281,11 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon,
-                size: 15, color: active ? AppColors.amb2 : AppColors.mut),
-            const SizedBox(width: 6),
+                size: 14, color: active ? AppColors.amb2 : AppColors.mut),
+            const SizedBox(width: 5),
             Text(label,
                 style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: active ? AppColors.amb2 : AppColors.mut)),
           ],
@@ -296,22 +296,22 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   Widget _filtersCard() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: _cardDeco,
       child:
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Wrap(spacing: 6, runSpacing: 6, children: [
+        Wrap(spacing: 4, runSpacing: 4, children: [
           _statusChip('Все', null),
           _statusChip('Работают', EmployeeStatus.active),
           _statusChip('Отпуск', EmployeeStatus.vacation),
           _statusChip('Больничный', EmployeeStatus.sick),
           _statusChip('Уволены', EmployeeStatus.fired),
         ]),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         LayoutBuilder(builder: (c, box) {
           final cols = box.maxWidth > 600 ? 2 : 1;
-          final w = (box.maxWidth - (cols - 1) * 8) / cols;
-          return Wrap(spacing: 8, runSpacing: 8, children: [
+          final w = (box.maxWidth - (cols - 1) * 6) / cols;
+          return Wrap(spacing: 6, runSpacing: 6, children: [
             SizedBox(
               width: w,
               child: DropdownButtonFormField<String?>(
@@ -320,7 +320,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 decoration: const InputDecoration(
                   labelText: 'Регион',
                   contentPadding:
-                      EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 ),
                 items: [
                   const DropdownMenuItem<String?>(
@@ -343,7 +343,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 decoration: const InputDecoration(
                   labelText: 'Город',
                   contentPadding:
-                      EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 ),
                 items: [
                   const DropdownMenuItem<String?>(
@@ -357,17 +357,18 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             ),
           ]);
         }),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         TextField(
           controller: _searchCtrl,
           onChanged: (v) => setState(() => _query = v),
           decoration: InputDecoration(
-            hintText: 'Поиск по имени, телефону, должности…',
-            prefixIcon: const Icon(Icons.search, size: 18),
+            hintText: 'Поиск…',
+            contentPadding: const EdgeInsets.symmetric(vertical: 8),
+            prefixIcon: const Icon(Icons.search, size: 16),
             suffixIcon: _query.isEmpty
                 ? null
                 : IconButton(
-                    icon: const Icon(Icons.close, size: 16),
+                    icon: const Icon(Icons.close, size: 14),
                     onPressed: () {
                       _searchCtrl.clear();
                       setState(() => _query = '');
@@ -439,26 +440,33 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       });
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Expanded(
-          child: Text(
-            'Найдено: ${all.length}',
-            style: const TextStyle(fontSize: 11.5, color: AppColors.dim),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(children: [
+          Expanded(
+            child: Text(
+              'Найдено: ${all.length}',
+              style: const TextStyle(fontSize: 11, color: AppColors.dim),
+            ),
           ),
-        ),
-        if (_hasActiveFilters)
-          TextButton(
-            onPressed: () => setState(() {
-              _filterRegionId = null;
-              _filterCityId = null;
-              _filterStatus = null;
-              _query = '';
-              _searchCtrl.clear();
-            }),
-            child: const Text('Сбросить', style: TextStyle(fontSize: 12)),
-          ),
-      ]),
-      const SizedBox(height: 8),
+          if (_hasActiveFilters)
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 30),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              onPressed: () => setState(() {
+                _filterRegionId = null;
+                _filterCityId = null;
+                _filterStatus = null;
+                _query = '';
+                _searchCtrl.clear();
+              }),
+              child: const Text('Сбросить', style: TextStyle(fontSize: 11.5)),
+            ),
+        ]),
+      ),
+      const SizedBox(height: 4),
       if (supers.isNotEmpty) _superBlock(supers),
       if (regionKeys.isEmpty && loose.isEmpty && supers.isEmpty)
         _emptyState()
@@ -475,17 +483,17 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   }
 
   Widget _emptyState() => Container(
-        padding: const EdgeInsets.symmetric(vertical: 40),
+        padding: const EdgeInsets.symmetric(vertical: 30),
         decoration: _cardDeco,
         child: const Center(
           child: Text('Сотрудников не найдено',
-              style: TextStyle(color: AppColors.dim, fontSize: 12.5)),
+              style: TextStyle(color: AppColors.dim, fontSize: 12)),
         ),
       );
 
   Widget _superBlock(List<Employee> supers) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: _cardDeco,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -496,21 +504,21 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(14)),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Row(children: [
                 Icon(
                     _superCollapsed
                         ? Icons.chevron_right
                         : Icons.expand_more,
-                    size: 18,
+                    size: 16,
                     color: AppColors.mut),
-                const SizedBox(width: 6),
-                const Icon(Icons.shield, size: 14, color: AppColors.pur),
+                const SizedBox(width: 4),
+                const Icon(Icons.shield, size: 13, color: AppColors.pur),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text('Управление',
                       style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w700)),
+                          fontSize: 12.5, fontWeight: FontWeight.w700)),
                 ),
                 _countBadge(supers.length),
               ]),
@@ -519,7 +527,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           if (!_superCollapsed) ...[
             const Divider(height: 1, color: AppColors.line),
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(4),
               child: Column(
                 children: supers.map((e) => _employeeRow(e)).toList(),
               ),
@@ -548,7 +556,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         regionAdmins.length;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: _cardDeco,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -564,20 +572,20 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(14)),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Row(children: [
                 Icon(
                     collapsed
                         ? Icons.chevron_right
                         : Icons.expand_more,
-                    size: 18,
+                    size: 16,
                     color: AppColors.mut),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 Icon(
                     regionKey == '__unassigned__'
                         ? Icons.link_off
                         : Icons.map_outlined,
-                    size: 14,
+                    size: 13,
                     color: regionKey == '__unassigned__'
                         ? AppColors.amb
                         : AppColors.cyn),
@@ -585,7 +593,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 Expanded(
                   child: Text(region?.name ?? 'Без региона',
                       style: const TextStyle(
-                          fontSize: 13,
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w700)),
                 ),
                 _countBadge(count),
@@ -595,21 +603,20 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           if (!collapsed) ...[
             const Divider(height: 1, color: AppColors.line),
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(4),
               child: Column(
                 children: [
                   ...regionAdmins.map((a) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: _employeeRow(a,
-                            roleOverride: 'Рег. админ'),
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: _employeeRow(a, roleOverride: 'Рег. админ'),
                       )),
                   ...cityKeys.map((ck) => _cityBlock(ck, cities[ck]!)),
                   if (cityKeys.isEmpty && regionAdmins.isEmpty)
                     const Padding(
-                      padding: EdgeInsets.all(8),
+                      padding: EdgeInsets.all(6),
                       child: Text('Нет сотрудников',
                           style: TextStyle(
-                              fontSize: 11, color: AppColors.dim)),
+                              fontSize: 10.5, color: AppColors.dim)),
                     ),
                 ],
               ),
@@ -632,10 +639,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     final count = parks.values.fold<int>(0, (a, l) => a + l.length);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 6, left: 8),
+      margin: const EdgeInsets.only(bottom: 4, left: 4),
       decoration: BoxDecoration(
         color: const Color(0xFF0E1420),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -649,32 +656,32 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
               }
             }),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
               child: Row(children: [
                 Icon(
                     collapsed
                         ? Icons.chevron_right
                         : Icons.expand_more,
-                    size: 16,
+                    size: 14,
                     color: AppColors.mut),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 const Icon(Icons.location_city,
-                    size: 13, color: AppColors.cyn),
-                const SizedBox(width: 6),
+                    size: 12, color: AppColors.cyn),
+                const SizedBox(width: 5),
                 Expanded(
                   child: Text(city?.name ?? '—',
                       style: const TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w600)),
+                          fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
                 Text('$count',
                     style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.dim)),
+                        fontSize: 10, color: AppColors.dim)),
               ]),
             ),
           ),
           if (!collapsed)
             Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
               child: Column(
                 children:
                     parkKeys.map((pk) => _parkBlock(pk, parks[pk]!)).toList(),
@@ -697,8 +704,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         : employees;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 6, left: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      margin: const EdgeInsets.only(bottom: 4, left: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
       decoration: BoxDecoration(
         color: AppColors.panel2,
         borderRadius: BorderRadius.circular(6),
@@ -716,7 +723,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             }),
             child: Padding(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               child: Row(children: [
                 Icon(
                     collapsed
@@ -724,14 +731,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                         : Icons.expand_more,
                     size: 14,
                     color: AppColors.mut),
-                const SizedBox(width: 4),
+                const SizedBox(width: 2),
                 const Icon(Icons.attractions,
                     size: 12, color: AppColors.amb),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(park?.name ?? '—',
                       style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600)),
+                          fontSize: 11.5, fontWeight: FontWeight.w600)),
                 ),
                 Text(
                     '${(parkAdmin != null ? 1 : 0) + others.length}',
@@ -742,12 +749,12 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           ),
           if (!collapsed)
             Padding(
-              padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+              padding: const EdgeInsets.fromLTRB(2, 0, 2, 4),
               child: Column(
                 children: [
                   if (parkAdmin != null)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.only(bottom: 2),
                       child: _employeeRow(parkAdmin,
                           roleOverride: 'Админ парка'),
                     ),
@@ -763,7 +770,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   Widget _looseBlock(List<Employee> loose) {
     final collapsed = _looseCollapsed;
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: _cardDeco,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -773,21 +780,21 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(14)),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Row(children: [
                 Icon(
                     collapsed
                         ? Icons.chevron_right
                         : Icons.expand_more,
-                    size: 18,
+                    size: 16,
                     color: AppColors.mut),
                 const SizedBox(width: 6),
-                const Icon(Icons.link_off, size: 14, color: AppColors.org),
+                const Icon(Icons.link_off, size: 13, color: AppColors.org),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text('Без привязки к парку',
                       style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w700)),
+                          fontSize: 12.5, fontWeight: FontWeight.w700)),
                 ),
                 _countBadge(loose.length),
               ]),
@@ -796,7 +803,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           if (!collapsed) ...[
             const Divider(height: 1, color: AppColors.line),
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(4),
               child: Column(
                 children: loose.map((e) => _employeeRow(e)).toList(),
               ),
@@ -808,14 +815,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   }
 
   Widget _countBadge(int n) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
         decoration: BoxDecoration(
           color: AppColors.panel2,
           borderRadius: BorderRadius.circular(99),
         ),
         child: Text('$n',
             style: const TextStyle(
-                fontSize: 10.5,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
                 color: AppColors.mut)),
       );
@@ -846,26 +853,33 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Expanded(
-          child: Text(
-            'Найдено: ${all.length}',
-            style: const TextStyle(fontSize: 11.5, color: AppColors.dim),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(children: [
+          Expanded(
+            child: Text(
+              'Найдено: ${all.length}',
+              style: const TextStyle(fontSize: 11, color: AppColors.dim),
+            ),
           ),
-        ),
-        if (_hasActiveFilters)
-          TextButton(
-            onPressed: () => setState(() {
-              _filterRegionId = null;
-              _filterCityId = null;
-              _filterStatus = null;
-              _query = '';
-              _searchCtrl.clear();
-            }),
-            child: const Text('Сбросить', style: TextStyle(fontSize: 12)),
-          ),
-      ]),
-      const SizedBox(height: 8),
+          if (_hasActiveFilters)
+            TextButton(
+              style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 30),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              onPressed: () => setState(() {
+                _filterRegionId = null;
+                _filterCityId = null;
+                _filterStatus = null;
+                _query = '';
+                _searchCtrl.clear();
+              }),
+              child: const Text('Сбросить', style: TextStyle(fontSize: 11.5)),
+            ),
+        ]),
+      ),
+      const SizedBox(height: 4),
       ...roots.map((e) => _treeNode(e, visibleIds, 0)),
     ]);
   }
@@ -882,11 +896,11 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: EdgeInsets.only(left: depth * 16.0, top: 2, bottom: 2),
+          padding: EdgeInsets.only(left: depth * 12.0, top: 1, bottom: 1),
           child: Container(
             decoration: BoxDecoration(
               color: const Color(0xFF0E1420),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               border: depth == 0
                   ? Border.all(color: AppColors.line, width: 1)
                   : null,
@@ -902,38 +916,38 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                       })
                   : null,
               onLongPress: () => _showEmployeeCard(e),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 6),
+                    horizontal: 6, vertical: 4),
                 child: Row(children: [
                   SizedBox(
-                    width: 20,
+                    width: 16,
                     child: hasChildren
                         ? Icon(
                             collapsed
                                 ? Icons.chevron_right
                                 : Icons.expand_more,
-                            size: 16,
+                            size: 14,
                             color: AppColors.mut)
                         : const SizedBox.shrink(),
                   ),
                   Container(
-                    width: 28,
-                    height: 28,
+                    width: 24,
+                    height: 24,
                     decoration: BoxDecoration(
                       color: Color(e.role.colorValue).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(7),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Center(
                       child: Text(_initials(e.name),
                           style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 9,
                               fontWeight: FontWeight.w700,
                               color: Color(e.role.colorValue))),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -942,14 +956,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                           Flexible(
                             child: Text(e.name,
                                 style: const TextStyle(
-                                    fontSize: 12.5,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.w600),
                                 overflow: TextOverflow.ellipsis),
                           ),
-                          const SizedBox(width: 5),
+                          const SizedBox(width: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
+                                horizontal: 4, vertical: 1),
                             decoration: BoxDecoration(
                               color: Color(e.role.colorValue)
                                   .withValues(alpha: 0.12),
@@ -957,14 +971,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                             ),
                             child: Text(e.role.label,
                                 style: TextStyle(
-                                    fontSize: 8.5,
+                                    fontSize: 8,
                                     fontWeight: FontWeight.w700,
                                     color: Color(e.role.colorValue))),
                           ),
                           const SizedBox(width: 4),
                           Container(
-                            width: 6,
-                            height: 6,
+                            width: 5,
+                            height: 5,
                             decoration: BoxDecoration(
                                 color: Color(e.status.colorValue),
                                 shape: BoxShape.circle),
@@ -973,7 +987,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                         Text(
                           _workplaceLabel(e),
                           style: const TextStyle(
-                              fontSize: 10, color: AppColors.dim),
+                              fontSize: 9.5, color: AppColors.dim),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
@@ -984,7 +998,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                     color: AppColors.mut,
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 26, minHeight: 26),
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
                     onPressed: () => _showEmployeeCard(e),
                   ),
                 ]),
@@ -1024,35 +1038,35 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
     return InkWell(
       onTap: () => _showEmployeeCard(e),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: const Color(0xFF0A0E14),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
         ),
         child: Row(
           children: [
             // Аватар
             Container(
-              width: 36,
-              height: 36,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                 color: roleColor.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(7),
               ),
               child: Center(
                 child: Text(
                   _initials(e.name),
                   style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: roleColor),
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
 
             // Имя и Роль/Должность
             Expanded(
@@ -1062,16 +1076,16 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   Text(
                     e.name,
                     style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w600),
+                        fontSize: 13, fontWeight: FontWeight.w600),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
                           color: roleColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(4),
@@ -1079,19 +1093,19 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                         child: Text(
                           roleLabel,
                           style: TextStyle(
-                              fontSize: 9,
+                              fontSize: 8.5,
                               fontWeight: FontWeight.w700,
                               color: roleColor),
                         ),
                       ),
                       if (e.jobTitle != null &&
                           e.jobTitle!.isNotEmpty) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 5),
                         Expanded(
                           child: Text(
                             e.jobTitle!,
                             style: const TextStyle(
-                                fontSize: 10.5, color: AppColors.dim),
+                                fontSize: 10, color: AppColors.dim),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1102,7 +1116,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
 
             // PIN и Статус
             Column(
@@ -1111,7 +1125,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 Text(
                   'PIN ${e.pin}',
                   style: const TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 10,
                       fontFamily: 'monospace',
                       color: AppColors.mut),
                 ),
@@ -1119,22 +1133,22 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   Text(
                     e.status.label,
                     style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 8.5,
                         fontWeight: FontWeight.w600,
                         color: color),
                   )
                 else
                   Container(
-                    width: 6,
-                    height: 6,
-                    margin: const EdgeInsets.only(top: 3),
+                    width: 5,
+                    height: 5,
+                    margin: const EdgeInsets.only(top: 2),
                     decoration: BoxDecoration(
                         color: color, shape: BoxShape.circle),
                   ),
               ],
             ),
-            const SizedBox(width: 4),
-            const Icon(Icons.chevron_right, size: 16, color: AppColors.dim),
+            const SizedBox(width: 2),
+            const Icon(Icons.chevron_right, size: 14, color: AppColors.dim),
           ],
         ),
       ),
@@ -1186,26 +1200,26 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                         children: [
                           _cardHeader(
                               current, roleColor, color, canManage, setS),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 14),
                           _infoSection(current, canManage, setS),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
                           _statsSection(current),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
                           if (canManage) ...[
                             const _CardSectionTitle('ДЕЙСТВИЯ'),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             _actionsGrid(current, setS),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 12),
                           ],
                           const _CardSectionTitle('ИСТОРИЯ РАБОТЫ'),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           _historyList(current),
                         ],
                       ),
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     decoration: const BoxDecoration(
                       border: Border(top: BorderSide(color: AppColors.line)),
                     ),
@@ -1233,36 +1247,36 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       bool canManage, StateSetter setS) {
     return Row(children: [
       Container(
-        width: 56,
-        height: 56,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
           color: roleColor.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Center(
           child: Text(_initials(e.name),
               style: TextStyle(
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: roleColor)),
         ),
       ),
-      const SizedBox(width: 14),
+      const SizedBox(width: 12),
       Expanded(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(e.name,
                 style: const TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.w700)),
+                    fontSize: 16, fontWeight: FontWeight.w700)),
             if (e.jobTitle != null && e.jobTitle!.isNotEmpty) ...[
               const SizedBox(height: 2),
               Text(e.jobTitle!,
                   style: const TextStyle(
-                      fontSize: 12, color: AppColors.dim)),
+                      fontSize: 11.5, color: AppColors.dim)),
             ],
-            const SizedBox(height: 6),
-            Wrap(spacing: 6, runSpacing: 4, children: [
+            const SizedBox(height: 4),
+            Wrap(spacing: 4, runSpacing: 4, children: [
               _badge(e.role.label, roleColor),
               _badge(e.status.label, statusColor),
             ]),
@@ -1281,7 +1295,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   Widget _badge(String text, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         border: Border.all(color: color.withValues(alpha: 0.3)),
@@ -1289,7 +1303,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       ),
       child: Text(text,
           style: TextStyle(
-              fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+              fontSize: 9.5, fontWeight: FontWeight.w600, color: color)),
     );
   }
 
@@ -1304,10 +1318,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         e.managerId == null ? null : db.employeeById(e.managerId);
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFF0E1420),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _infoLine(
@@ -1322,7 +1336,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                     color: AppColors.mut,
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 26, minHeight: 26),
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: e.phone));
                       _snack('Телефон скопирован');
@@ -1333,7 +1347,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                     color: AppColors.grn,
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 26, minHeight: 26),
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
                     onPressed: () => _callPhone(e.phone),
                   ),
                 ]),
@@ -1359,7 +1373,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                       tooltip: 'Отвязать',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(
-                          minWidth: 26, minHeight: 26),
+                          minWidth: 24, minHeight: 24),
                       onPressed: () => _unbindBadge(e, setS),
                     ),
                   IconButton(
@@ -1370,7 +1384,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                         : 'Привязать бейдж',
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
-                        minWidth: 26, minHeight: 26),
+                        minWidth: 24, minHeight: 24),
                     onPressed: () => _bindBadge(e, setS),
                   ),
                 ])
@@ -1399,7 +1413,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                     tooltip: 'Сменить руководителя',
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 26, minHeight: 26),
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
                     onPressed: () => _changeManager(e, setS),
                   )
                 : null,
@@ -1429,23 +1443,23 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     Color? valueColor,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: 15, color: AppColors.mut),
-          const SizedBox(width: 10),
+          Icon(icon, size: 14, color: AppColors.mut),
+          const SizedBox(width: 8),
           SizedBox(
-            width: 100,
+            width: 90,
             child: Text(label,
                 style:
-                    const TextStyle(fontSize: 12, color: AppColors.dim)),
+                    const TextStyle(fontSize: 11.5, color: AppColors.dim)),
           ),
           Expanded(
             child: Text(
               value,
               style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                   fontFamily: valueMono ? 'monospace' : null,
                   color: valueColor ?? AppColors.txt),
@@ -1554,28 +1568,28 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const _CardSectionTitle('СТАТИСТИКА'),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Row(children: stats.map((s) {
           return Expanded(
             child: Container(
-              margin: const EdgeInsets.only(right: 6),
+              margin: const EdgeInsets.only(right: 4),
               padding:
-                  const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                  const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
               decoration: BoxDecoration(
                 color: const Color(0xFF0E1420),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
               child: Column(children: [
-                Icon(s.icon, size: 16, color: AppColors.mut),
-                const SizedBox(height: 4),
+                Icon(s.icon, size: 14, color: AppColors.mut),
+                const SizedBox(height: 2),
                 Text(s.value,
                     style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         fontFamily: 'monospace')),
                 Text(s.label,
                     style:
-                        const TextStyle(fontSize: 10, color: AppColors.dim),
+                        const TextStyle(fontSize: 9, color: AppColors.dim),
                     textAlign: TextAlign.center),
               ]),
             ),
@@ -1641,7 +1655,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         ),
     ];
 
-    return Wrap(spacing: 8, runSpacing: 8, children: buttons);
+    return Wrap(spacing: 6, runSpacing: 6, children: buttons);
   }
 
   Widget _actionBtn({
@@ -1653,20 +1667,20 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     final c = color ?? AppColors.amb;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(9),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: c.withValues(alpha: 0.08),
           border: Border.all(color: c.withValues(alpha: 0.3)),
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14, color: c),
-          const SizedBox(width: 6),
+          Icon(icon, size: 13, color: c),
+          const SizedBox(width: 4),
           Text(label,
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: c)),
+                  fontSize: 11.5, fontWeight: FontWeight.w600, color: c)),
         ]),
       ),
     );
@@ -1705,19 +1719,19 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   style: const TextStyle(
                       fontSize: 11, color: AppColors.dim),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Flexible(
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
                         Container(
-                          margin: const EdgeInsets.only(bottom: 6),
-                          padding: const EdgeInsets.all(10),
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             color: selectedId == null
                                 ? AppColors.amb.withValues(alpha: 0.1)
                                 : AppColors.panel2,
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                             border: Border.all(
                               color: selectedId == null
                                   ? AppColors.amb.withValues(alpha: 0.4)
@@ -1736,7 +1750,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                                     ? AppColors.amb
                                     : AppColors.dim,
                               ),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 8),
                               const Expanded(
                                 child: Text('Без руководителя',
                                     style: TextStyle(fontSize: 13)),
@@ -1745,14 +1759,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                           ),
                         ),
                         ...candidates.map((c) => Container(
-                              margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.all(10),
+                              margin: const EdgeInsets.only(bottom: 4),
+                              padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
                                 color: selectedId == c.id
                                     ? AppColors.amb
                                         .withValues(alpha: 0.1)
                                     : AppColors.panel2,
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
                                   color: selectedId == c.id
                                       ? AppColors.amb
@@ -1773,7 +1787,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                                         ? AppColors.amb
                                         : AppColors.dim,
                                   ),
-                                  const SizedBox(width: 10),
+                                  const SizedBox(width: 8),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -1883,13 +1897,13 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
               const SizedBox(height: 12),
               for (final r in allowed)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: InkWell(
                     onTap: () => setS2(() => selected = r),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                          horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
                         color: selected == r
                             ? AppColors.pur.withValues(alpha: 0.12)
@@ -1909,7 +1923,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                             color: selected == r
                                 ? AppColors.pur
                                 : AppColors.dim),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         Text(r.label,
                             style: const TextStyle(fontSize: 13)),
                       ]),
@@ -2049,10 +2063,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                       parkId = null;
                     }),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   if (parks.isEmpty)
                     const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
+                      padding: EdgeInsets.symmetric(vertical: 6),
                       child: Text('В этом городе нет парков',
                           style: TextStyle(
                               fontSize: 11, color: AppColors.amb)),
@@ -2225,10 +2239,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                       parkId = null;
                     }),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   if (parks.isEmpty)
                     const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
+                      padding: EdgeInsets.symmetric(vertical: 6),
                       child: Text('В этом городе нет парков',
                           style: TextStyle(
                               fontSize: 11, color: AppColors.amb)),
@@ -2476,13 +2490,13 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               for (final s in EmployeeStatus.values)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: InkWell(
                     onTap: () => setS2(() => sel = s),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                          horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
                         color: sel == s
                             ? AppColors.amb.withValues(alpha: 0.12)
@@ -2502,7 +2516,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                             color: sel == s
                                 ? AppColors.amb
                                 : AppColors.dim),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         Text(s.label,
                             style: TextStyle(
                                 fontSize: 13,
@@ -2514,7 +2528,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   ),
                 ),
               if (sel != EmployeeStatus.active) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 TextField(
                   controller: noteCtrl,
                   decoration: const InputDecoration(
@@ -2657,14 +2671,14 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
               autofocus: true,
               decoration: const InputDecoration(labelText: 'ФИО *'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             TextField(
               controller: phoneCtrl,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
                   labelText: 'Телефон', hintText: '+7 900 000-00-00'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             TextField(
               controller: jobCtrl,
               decoration: const InputDecoration(
@@ -2761,10 +2775,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   Widget _historyList(Employee e) {
     if (e.history.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: AppColors.panel2,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: const Text('История пуста',
             style: TextStyle(fontSize: 12, color: AppColors.dim)),
@@ -2781,13 +2795,13 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         final park = h.parkId == null ? null : db.parkById(h.parkId);
         final region = h.regionId == null ? null : db.regionById(h.regionId);
         return Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.all(10),
+          margin: const EdgeInsets.only(bottom: 4),
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: isCurrent
                 ? AppColors.grn.withValues(alpha: 0.05)
                 : AppColors.panel2,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
             border: isCurrent
                 ? Border.all(color: AppColors.grn.withValues(alpha: 0.3))
                 : null,
@@ -2797,52 +2811,52 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
             children: [
               Row(children: [
                 Icon(isCurrent ? Icons.circle : Icons.history,
-                    size: isCurrent ? 8 : 14,
+                    size: isCurrent ? 8 : 12,
                     color: isCurrent ? AppColors.grn : AppColors.dim),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(h.role.label,
                       style: const TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w600)),
+                          fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
                 if (isCurrent)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 1),
+                        horizontal: 4, vertical: 1),
                     decoration: BoxDecoration(
                       color: AppColors.grn.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(99),
                     ),
                     child: const Text('сейчас',
                         style: TextStyle(
-                            fontSize: 9.5,
+                            fontSize: 9,
                             color: AppColors.grn,
                             fontWeight: FontWeight.w700)),
                   ),
               ]),
               if (park != null || region != null)
                 Padding(
-                  padding: const EdgeInsets.only(left: 22, top: 2),
+                  padding: const EdgeInsets.only(left: 18, top: 2),
                   child: Text(
                     [region?.name, park?.name]
                         .where((x) => x != null)
                         .join(' → '),
                     style: const TextStyle(
-                        fontSize: 11, color: AppColors.mut),
+                        fontSize: 10.5, color: AppColors.mut),
                   ),
                 ),
               Padding(
-                padding: const EdgeInsets.only(left: 22, top: 2),
+                padding: const EdgeInsets.only(left: 18, top: 2),
                 child: Text(_fmtPeriod(h),
                     style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.dim)),
+                        fontSize: 10, color: AppColors.dim)),
               ),
               if (h.reason != null && h.reason!.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(left: 22, top: 2),
+                  padding: const EdgeInsets.only(left: 18, top: 2),
                   child: Text('· ${h.reason}',
                       style: const TextStyle(
-                          fontSize: 10.5,
+                          fontSize: 10,
                           fontStyle: FontStyle.italic,
                           color: AppColors.dim)),
                 ),
@@ -2879,7 +2893,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       onTap: () => setState(() => _filterStatus = status),
       borderRadius: BorderRadius.circular(99),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
           color: active
               ? AppColors.amb.withValues(alpha: 0.12)
@@ -2892,7 +2906,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         ),
         child: Text(label,
             style: TextStyle(
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
                 color: active ? AppColors.amb2 : AppColors.mut)),
       ),
