@@ -160,16 +160,98 @@ class AppDatabase extends ChangeNotifier {
     return false;
   }
 
-  List<Employee> directReports(String managerId) => employees
-      .where((e) =>
-          e.managerId == managerId && e.status != EmployeeStatus.fired)
-      .toList()
-    ..sort((a, b) {
-      if (a.role.level != b.role.level) {
-        return b.role.level.compareTo(a.role.level);
+  /// Прямые подчинённые руководителя.
+  ///
+  /// Для parkAdmin — ВСЕ операторы и техники его парка (независимо от managerId),
+  /// чтобы при нескольких админах оператор отображался под каждым из них.
+  /// Для остальных ролей — только по managerId.
+  List<Employee> directReports(String managerId) {
+    final manager = employeeById(managerId);
+    final ids = <String>{};
+
+    // Явное подчинение по managerId
+    for (final e in employees) {
+      if (e.status == EmployeeStatus.fired) continue;
+      if (e.id == managerId) continue;
+      if (e.managerId == managerId) ids.add(e.id);
+    }
+
+    // parkAdmin → все операторы (approved links) + техники его парка
+    if (manager != null &&
+        manager.role == EmployeeRole.parkAdmin &&
+        manager.parkId != null) {
+      final pid = manager.parkId!;
+
+      for (final link in operatorLinks) {
+        if (link.parkId == pid && link.status == LinkStatus.approved) {
+          final op = employeeById(link.operatorId);
+          if (op != null &&
+              op.status != EmployeeStatus.fired &&
+              op.id != managerId) {
+            ids.add(op.id);
+          }
+        }
       }
-      return a.name.compareTo(b.name);
-    });
+
+      for (final e in employees) {
+        if (e.status == EmployeeStatus.fired) continue;
+        if (e.id == managerId) continue;
+        if (e.hasRole(EmployeeRole.technician) && e.parkId == pid) {
+          ids.add(e.id);
+        }
+      }
+    }
+
+    return ids
+        .map(employeeById)
+        .whereType<Employee>()
+        .toList()
+      ..sort((a, b) {
+        if (a.role.level != b.role.level) {
+          return b.role.level.compareTo(a.role.level);
+        }
+        return a.name.compareTo(b.name);
+      });
+  }
+
+  /// Все руководители сотрудника (для отображения в карточке).
+  ///
+  /// Для оператора/техника — все активные parkAdmin'ы его парка(ов),
+  /// плюс явный managerId (если указывает на кого-то ещё).
+  /// Для остальных — только managerId.
+  List<Employee> managersOf(Employee e) {
+    final ids = <String>{};
+    if (e.managerId != null) ids.add(e.managerId!);
+
+    if (e.role == EmployeeRole.operator ||
+        e.role == EmployeeRole.technician ||
+        e.hasRole(EmployeeRole.operator) ||
+        e.hasRole(EmployeeRole.technician)) {
+      final parkIds = <String>{};
+      if (e.parkId != null) parkIds.add(e.parkId!);
+      for (final l in operatorLinks) {
+        if (l.operatorId == e.id && l.status == LinkStatus.approved) {
+          parkIds.add(l.parkId);
+        }
+      }
+      for (final pid in parkIds) {
+        for (final a in parkAdminsOf(pid)) {
+          if (a.id != e.id) ids.add(a.id);
+        }
+      }
+    }
+
+    return ids
+        .map(employeeById)
+        .whereType<Employee>()
+        .toList()
+      ..sort((a, b) {
+        if (a.role.level != b.role.level) {
+          return b.role.level.compareTo(a.role.level);
+        }
+        return a.name.compareTo(b.name);
+      });
+  }
 
   List<Employee> rootEmployees() {
     return employees.where((e) {
