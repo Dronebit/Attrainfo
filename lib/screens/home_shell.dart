@@ -9,6 +9,7 @@ import 'infrastructure_screen.dart';
 import 'technicians_screen.dart';
 import 'operator_screen.dart';
 import 'operators_screen.dart';
+import 'debug_console_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -27,6 +28,7 @@ class _HomeShellState extends State<HomeShell> {
     ('Сервисная служба', 'Сотрудники и назначения', Icons.people_outline),
     ('Оператор', 'Смена · аттракционы · сообщения о проблемах', Icons.support_agent),
     ('Сотрудники', 'Управление операторами · бейджи · PIN', Icons.badge_outlined),
+    ('Консоль', 'Отладочные логи · NFC-тест', Icons.bug_report_outlined),
   ];
 
   @override
@@ -39,6 +41,7 @@ class _HomeShellState extends State<HomeShell> {
       TechniciansScreen(),
       OperatorScreen(),
       OperatorsScreen(),
+      DebugConsoleScreen(),
     ];
 
     final isWide = MediaQuery.of(context).size.width >= 900;
@@ -110,10 +113,16 @@ class _MainArea extends StatelessWidget {
         ]),
       ),
       Expanded(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(28, 22, 28, 46),
-          child: child,
-        ),
+        // Для консоли нужен Expanded-контекст без скролла — отдельный путь
+        child: child is DebugConsoleScreen
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(28, 22, 28, 22),
+                child: child,
+              )
+            : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(28, 22, 28, 46),
+                child: child,
+              ),
       ),
     ]);
   }
@@ -142,19 +151,25 @@ class _Sidebar extends StatelessWidget {
       child: Column(children: [
         const _Logo(),
         const SizedBox(height: 14),
-        ...List.generate(
-          pages.length,
-          (i) => Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: _NavItem(
-              icon: pages[i].$3,
-              label: pages[i].$1,
-              active: i == index,
-              onTap: () => onTap(i),
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                for (var i = 0; i < pages.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: _NavItem(
+                      icon: pages[i].$3,
+                      label: pages[i].$1,
+                      active: i == index,
+                      onTap: () => onTap(i),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
-        const Spacer(),
+        const SizedBox(height: 8),
         TextButton.icon(
           onPressed: () => context.read<AppDatabase>().resetToSeed(),
           icon: const Icon(Icons.refresh, size: 14),
