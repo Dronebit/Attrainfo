@@ -122,6 +122,10 @@ class Employee {
   String? jobTitle;
   String? address;
 
+  // Последний известный город (вычисляется при назначении в парк,
+  // сохраняется при снятии — чтобы «свободный админ» не терял город)
+  String? lastCityId;
+
   DateTime createdAt;
   DateTime? statusChangedAt;
   String? statusNote;
@@ -139,6 +143,7 @@ class Employee {
     this.regionId,
     this.jobTitle,
     this.address,
+    this.lastCityId,
     DateTime? createdAt,
     this.statusChangedAt,
     this.statusNote,
@@ -161,6 +166,7 @@ class Employee {
         'regionId': regionId,
         'jobTitle': jobTitle,
         'address': address,
+        'lastCityId': lastCityId,
         'createdAt': createdAt.toIso8601String(),
         'statusChangedAt': statusChangedAt?.toIso8601String(),
         'statusNote': statusNote,
@@ -185,6 +191,7 @@ class Employee {
         regionId: j['regionId'],
         jobTitle: j['jobTitle'],
         address: j['address'],
+        lastCityId: j['lastCityId'],
         createdAt: j['createdAt'] != null
             ? DateTime.parse(j['createdAt'])
             : DateTime.now(),
@@ -197,8 +204,6 @@ class Employee {
                 .toList() ??
             [],
       );
-
-  // ─── фабрики для миграции из старых моделей ───
 
   factory Employee.fromOldOperator(Map<String, dynamic> j) => Employee(
         id: j['id'],
