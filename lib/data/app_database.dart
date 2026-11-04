@@ -127,7 +127,6 @@ class AppDatabase extends ChangeNotifier {
   }
 
   /// Иерархия региона: City → Location → List<Park>
-  /// Именно эта структура рендерится в super-панели.
   Map<City, Map<ParkLocation, List<Park>>> parksOfRegionHierarchy(
       String regId) {
     final region = regionById(regId);
@@ -177,6 +176,66 @@ class AppDatabase extends ChangeNotifier {
   List<ParkAdmin> get superAdmins =>
       admins.where((a) => a.active && a.role == AdminRole.superAdmin).toList();
 
+  // ═══════════════ вычисляемые регион/город ═══════════════
+
+  /// Регион, в котором работает админ (вычисляется)
+  Region? regionOfAdmin(ParkAdmin admin) {
+    if (admin.role == AdminRole.regionalAdmin) {
+      return admin.regionId == null ? null : regionById(admin.regionId);
+    }
+    if (admin.role == AdminRole.parkAdmin && admin.parkId != null) {
+      final regionsOfPark = this.regionsOfPark(admin.parkId!);
+      return regionsOfPark.isEmpty ? null : regionsOfPark.first;
+    }
+    return null;
+  }
+
+  /// Город, в котором работает админ (вычисляется)
+  City? cityOfAdmin(ParkAdmin admin) {
+    if (admin.role == AdminRole.parkAdmin && admin.parkId != null) {
+      final park = parkById(admin.parkId);
+      if (park == null) return null;
+      final loc = locById(park.locId);
+      return loc == null ? null : cityById(loc.cityId);
+    }
+    return null;
+  }
+
+  /// Регионы, где работает оператор (через approved links)
+  List<Region> regionsOfOperator(String operatorId) {
+    final parkIds = approvedParkIdsForOperator(operatorId);
+    final regionIds = <String>{};
+    for (final pid in parkIds) {
+      for (final r in regionsOfPark(pid)) {
+        regionIds.add(r.id);
+      }
+    }
+    return regionIds.map(regionById).whereType<Region>().toList();
+  }
+
+  /// Города, где работает оператор (через approved links)
+  List<City> citiesOfOperator(String operatorId) {
+    final parkIds = approvedParkIdsForOperator(operatorId);
+    final cityIds = <String>{};
+    for (final pid in parkIds) {
+      final park = parkById(pid);
+      if (park == null) continue;
+      final loc = locById(park.locId);
+      if (loc == null) continue;
+      cityIds.add(loc.cityId);
+    }
+    return cityIds.map(cityById).whereType<City>().toList();
+  }
+
+  /// Все активные админы (для фильтра)
+  List<ParkAdmin> searchAdmins(String query) {
+    final q = query.toLowerCase().trim();
+    if (q.isEmpty) return admins.where((a) => a.active).toList();
+    return admins
+        .where((a) => a.active && a.name.toLowerCase().contains(q))
+        .toList();
+  }
+
   // ═══════════════ регионы CRUD ═══════════════
 
   Region createRegion(String name, {List<String>? parkIds}) {
@@ -185,7 +244,6 @@ class AppDatabase extends ChangeNotifier {
       name: name,
       parkIds: parkIds ?? [],
     );
-    // Убираем парки из других регионов
     for (final pid in region.parkIds) {
       _detachParkFromOtherRegions(pid, region.id);
     }
@@ -198,7 +256,6 @@ class AppDatabase extends ChangeNotifier {
     final region = regionById(regId);
     if (region == null) return;
     region.name = name;
-    // Убираем парки из других регионов
     for (final pid in parkIds) {
       _detachParkFromOtherRegions(pid, regId);
     }
@@ -208,7 +265,6 @@ class AppDatabase extends ChangeNotifier {
 
   void deleteRegion(String regId) {
     regions.removeWhere((r) => r.id == regId);
-    // Отвязываем региональных админов
     for (final a in admins.where((a) => a.regionId == regId)) {
       a.active = false;
     }
