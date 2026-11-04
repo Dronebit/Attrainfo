@@ -5,9 +5,8 @@ import '../data/debug_log.dart';
 import '../models/models.dart';
 import '../models/employee.dart';
 import '../models/region.dart';
-import '../theme.dart';
 import '../models/enums.dart';
-
+import '../theme.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
@@ -529,7 +528,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             d.reason != DowntimeReason.retired)
         .length;
 
-    // Собираем историю админов этого парка
     final history = <_ParkHistoryEntry>[];
     for (final e in db.employees) {
       for (final h in e.history) {
@@ -543,7 +541,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
       }
     }
     history.sort((a, b) {
-      // сначала текущие, потом по дате
       if (a.entry.isCurrent != b.entry.isCurrent) {
         return a.entry.isCurrent ? -1 : 1;
       }
@@ -593,11 +590,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // ─── Инфо ───
                   _parkInfoBlock(park),
                   const SizedBox(height: 14),
-
-                  // ─── Статистика ───
                   const _SectionTitle('СТАТИСТИКА'),
                   const SizedBox(height: 6),
                   Row(children: [
@@ -628,8 +622,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                             AppColors.pur)),
                   ]),
                   const SizedBox(height: 14),
-
-                  // ─── Админы ───
                   const _SectionTitle('АДМИНИСТРАТОРЫ'),
                   const SizedBox(height: 6),
                   if (admins.isEmpty)
@@ -693,7 +685,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                   OutlinedButton.icon(
                     onPressed: () async {
                       Navigator.pop(ctx);
-                      await _openParkAdminDialog(db, park);
+                      await _assignAdminToPark(db, park);
                       if (!mounted) return;
                       _showParkCard(db, admin, park);
                     },
@@ -705,8 +697,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-
-                  // ─── История ───
                   const _SectionTitle('ИСТОРИЯ АДМИНИСТРАТОРОВ'),
                   const SizedBox(height: 6),
                   if (history.isEmpty)
@@ -1040,14 +1030,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   void _doAssignAdminToPark(
       AppDatabase db, Employee a, Park park, String? reason) {
     final now = DateTime.now();
-    // Закрыть текущую активную запись
     for (final h in a.history) {
       if (h.isCurrent) {
         h.endedAt = now;
         h.reason = reason ?? 'Переведён';
       }
     }
-    // Создать новую
     a.history.add(RoleHistoryEntry(
       id: _uid(),
       role: EmployeeRole.parkAdmin,
@@ -2310,80 +2298,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
     setState(() {});
   }
 
-  Future<void> _openParkAdminDialog(AppDatabase db, Park park) async {
-    final existing = db.parkAdminsOf(park.id);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.panel,
-        title: Text('Админы · ${park.name}'),
-        content: SizedBox(
-          width: 440,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (existing.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 14),
-                  child: Text('Нет администраторов',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: 12, color: AppColors.dim)),
-                )
-              else
-                ...existing.map((a) => Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.panel2,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(children: [
-                        Expanded(
-                          child: Text('${a.name} · PIN ${a.pin}',
-                              style: const TextStyle(fontSize: 12)),
-                        ),
-                        IconButton(
-                          icon:
-                              const Icon(Icons.delete_outline, size: 16),
-                          color: AppColors.red,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                              minWidth: 30, minHeight: 30),
-                          onPressed: () {
-                            db.employees.removeWhere((x) => x.id == a.id);
-                            db.save();
-                            Navigator.pop(ctx);
-                          },
-                        ),
-                      ]),
-                    )),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.amb,
-                    foregroundColor: const Color(0xFF1C1204)),
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _assignAdminToPark(db, park);
-                },
-                icon: const Icon(Icons.person_add, size: 16),
-                label: const Text('Назначить админа'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Закрыть')),
-        ],
-      ),
-    );
-    setState(() {});
-  }
-
   Future<void> _assignAdminToPark(AppDatabase db, Park park) async {
     final parkLoc = db.locById(park.locId);
     final parkCityId = parkLoc?.cityId;
@@ -2717,8 +2631,6 @@ final _cardDeco = BoxDecoration(
   border: Border.all(color: AppColors.line),
   borderRadius: BorderRadius.circular(14),
 );
-
-// ═══════════ вспомогательные виджеты ═══════════
 
 class _SectionTitle extends StatelessWidget {
   final String text;
