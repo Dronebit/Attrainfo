@@ -10,6 +10,7 @@ import 'technicians_screen.dart';
 import 'operator_screen.dart';
 import 'operators_screen.dart';
 import 'debug_console_screen.dart';
+import 'admin_panel_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -29,6 +30,7 @@ class _HomeShellState extends State<HomeShell> {
     ('Оператор', 'Смена · аттракционы · сообщения о проблемах', Icons.support_agent),
     ('Сотрудники', 'Управление операторами · бейджи · PIN', Icons.badge_outlined),
     ('Консоль', 'Отладочные логи · NFC-тест', Icons.bug_report_outlined),
+    ('Админ-панель', 'Регионы · парки · администраторы', Icons.shield_outlined),
   ];
 
   @override
@@ -42,6 +44,7 @@ class _HomeShellState extends State<HomeShell> {
       OperatorScreen(),
       OperatorsScreen(),
       DebugConsoleScreen(),
+      AdminPanelScreen(),
     ];
 
     final isWide = MediaQuery.of(context).size.width >= 900;
