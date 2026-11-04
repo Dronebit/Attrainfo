@@ -15,33 +15,21 @@ class AppDatabase extends ChangeNotifier {
   static const _oldKey = 'attrakontrol-v5';
   static const masterPin = '9999';
 
-  // базовые справочники
   List<City> cities = [];
   List<ParkLocation> locations = [];
   List<Park> parks = [];
   List<Ride> rides = [];
   List<Downtime> downtimes = [];
   List<Incident> incidents = [];
-
-  // персонал (единая сущность)
   List<Employee> employees = [];
-
-  // связи операторов и парков
   List<OperatorParkLink> operatorLinks = [];
-
-  // смены
   List<ShiftVacancy> vacancies = [];
   List<VacancyApplication> applications = [];
-
-  // регионы
   List<Region> regions = [];
 
-  // состояние
   Shift? activeShift;
   bool opSelectingRides = false;
   String? currentParkId;
-
-  // ═══════════ базовые геттеры ═══════════
 
   City? cityById(String? id) => cities.firstWhereOrNull((c) => c.id == id);
   ParkLocation? locById(String? id) =>
@@ -55,7 +43,20 @@ class AppDatabase extends ChangeNotifier {
   Region? regionById(String? id) =>
       regions.firstWhereOrNull((r) => r.id == id);
 
-  // ═══════════ сотрудники ═══════════
+  String cityOfPark(Park p) {
+    final l = locById(p.locId);
+    final c = l == null ? null : cityById(l.cityId);
+    return c?.name ?? '—';
+  }
+
+  String ridePath(String rideId) {
+    final r = rideById(rideId);
+    if (r == null) return '—';
+    final p = parkById(r.parkId);
+    final l = p == null ? null : locById(p.locId);
+    final c = l == null ? null : cityById(l.cityId);
+    return [c?.name, l?.name, p?.name].where((x) => x != null).join(' · ');
+  }
 
   Employee? employeeById(String? id) =>
       employees.firstWhereOrNull((e) => e.id == id);
@@ -71,7 +72,6 @@ class AppDatabase extends ChangeNotifier {
     return employees.firstWhereOrNull((e) => e.badgeId == uid);
   }
 
-  // Backward-compat: операторские хелперы
   Employee? operatorById(String? id) {
     final e = employeeById(id);
     return (e != null && e.role == EmployeeRole.operator) ? e : null;
@@ -93,8 +93,6 @@ class AppDatabase extends ChangeNotifier {
     final e = employeeById(id);
     return (e != null && e.role == EmployeeRole.technician) ? e : null;
   }
-
-  // ═══════════ списки по ролям ═══════════
 
   List<Employee> get operators =>
       employees.where((e) => e.role == EmployeeRole.operator).toList();
@@ -124,8 +122,6 @@ class AppDatabase extends ChangeNotifier {
           e.parkId == parkId &&
           e.status == EmployeeStatus.active)
       .toList();
-
-  // ═══════════ регионы ═══════════
 
   List<Park> parksOfRegion(String regId) {
     final region = regionById(regId);
@@ -204,8 +200,6 @@ class AppDatabase extends ChangeNotifier {
     return null;
   }
 
-  // ═══════════ регионы CRUD ═══════════
-
   Region createRegion(String name, {List<String>? parkIds}) {
     final region = Region(
       id: 'reg${DateTime.now().microsecondsSinceEpoch}',
@@ -233,7 +227,6 @@ class AppDatabase extends ChangeNotifier {
 
   void deleteRegion(String regId) {
     regions.removeWhere((r) => r.id == regId);
-    // Деактивируем региональных админов этого региона
     for (final e in employees.where(
         (e) => e.role == EmployeeRole.regionalAdmin && e.regionId == regId)) {
       e.status = EmployeeStatus.fired;
@@ -265,8 +258,6 @@ class AppDatabase extends ChangeNotifier {
     region.parkIds.remove(parkId);
     save();
   }
-
-  // ═══════════ связи оператор ↔ парк ═══════════
 
   List<OperatorParkLink> linksForOperator(String opId) =>
       operatorLinks.where((l) => l.operatorId == opId).toList();
@@ -336,8 +327,6 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  // ═══════════ вакансии ═══════════
-
   List<ShiftVacancy> vacanciesForPark(String parkId) => vacancies
       .where((v) => v.parkId == parkId)
       .toList()
@@ -377,14 +366,12 @@ class AppDatabase extends ChangeNotifier {
   bool canOperatorApply(String opId, String vacancyId) {
     final v = vacancyById(vacancyId);
     if (v == null || v.status != VacancyStatus.open) return false;
-
     final already = applications.firstWhereOrNull((a) =>
         a.vacancyId == vacancyId &&
         a.operatorId == opId &&
         (a.status == ApplicationStatus.pending ||
             a.status == ApplicationStatus.approved));
     if (already != null) return false;
-
     final conflict = applications.any((a) {
       if (a.operatorId != opId) return false;
       if (a.status != ApplicationStatus.approved) return false;
@@ -430,7 +417,6 @@ class AppDatabase extends ChangeNotifier {
     a.status = ApplicationStatus.approved;
     a.decidedByAdminId = adminId;
     a.decidedAt = DateTime.now();
-
     final v = vacancyById(a.vacancyId);
     if (v != null) {
       final approved = applications
@@ -453,8 +439,6 @@ class AppDatabase extends ChangeNotifier {
     a.decidedAt = DateTime.now();
     save();
   }
-
-  // ═══════════ смена (реальная) ═══════════
 
   void startShift(String parkId, {String? operatorId, String? vacancyId}) {
     activeShift = Shift(
@@ -490,8 +474,6 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  // ═══════════ аналитика ═══════════
-
   List<({String rideId, double total, Map<DowntimeReason, double> byReason})>
       downtimeByRide(int periodDays) {
     final now = DateTime.now();
@@ -515,8 +497,6 @@ class AppDatabase extends ChangeNotifier {
         .toList()
       ..sort((a, b) => b.total.compareTo(a.total));
   }
-
-  // ═══════════ save / load / migrate ═══════════
 
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
@@ -543,8 +523,6 @@ class AppDatabase extends ChangeNotifier {
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-
-    // ─── v6 (новый формат) ───
     final v6Raw = prefs.getString(_key);
     if (v6Raw != null) {
       try {
@@ -555,8 +533,6 @@ class AppDatabase extends ChangeNotifier {
         debugPrint('Failed to load v6: $e');
       }
     }
-
-    // ─── v5 → v6 (миграция) ───
     final v5Raw = prefs.getString(_oldKey);
     if (v5Raw != null) {
       try {
@@ -569,8 +545,6 @@ class AppDatabase extends ChangeNotifier {
         debugPrint('Failed to migrate v5: $e');
       }
     }
-
-    // ─── Свежий seed ───
     _applyV6(_seedJson());
     if (employees.isEmpty) {
       _applyV6(_seedJson());
@@ -666,7 +640,6 @@ class AppDatabase extends ChangeNotifier {
   }
 
   void _applyV5AndMigrate(Map<String, dynamic> j) {
-    // Загружаем всё кроме employees
     cities =
         (j['cities'] as List?)?.map((e) => City.fromJson(e)).toList() ?? [];
     locations = (j['locations'] as List?)
@@ -701,9 +674,7 @@ class AppDatabase extends ChangeNotifier {
         (j['regions'] as List?)?.map((e) => Region.fromJson(e)).toList() ??
             [];
 
-    // Мигрируем сотрудников из старых трёх списков
     final emps = <Employee>[];
-
     final oldOperators = j['operators'] as List?;
     if (oldOperators != null) {
       for (final o in oldOperators) {
@@ -715,7 +686,6 @@ class AppDatabase extends ChangeNotifier {
         }
       }
     }
-
     final oldAdmins = j['admins'] as List?;
     if (oldAdmins != null) {
       for (final a in oldAdmins) {
@@ -727,7 +697,6 @@ class AppDatabase extends ChangeNotifier {
         }
       }
     }
-
     final oldTechs = j['techs'] as List?;
     if (oldTechs != null) {
       for (final t in oldTechs) {
@@ -738,14 +707,11 @@ class AppDatabase extends ChangeNotifier {
         }
       }
     }
-
     employees = emps;
-
     final sh = j['activeShift'];
     activeShift = sh is Map<String, dynamic> ? Shift.fromJson(sh) : null;
     opSelectingRides = j['opSelectingRides'] ?? false;
     currentParkId = j['currentParkId'];
-
     debugPrint('Migration v5→v6: migrated ${emps.length} employees');
   }
 }
