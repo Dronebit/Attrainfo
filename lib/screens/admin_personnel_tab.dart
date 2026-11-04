@@ -8,6 +8,8 @@ import '../models/models.dart';
 import '../models/employee.dart';
 import '../models/region.dart';
 import '../theme.dart';
+import '../models/operator_park_link.dart';
+import '../models/shift_vacancy.dart';
 
 class AdminPersonnelTab extends StatefulWidget {
   final AppDatabase db;
