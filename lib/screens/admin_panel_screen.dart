@@ -393,10 +393,16 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                               fontSize: 14.5, fontWeight: FontWeight.w700)),
                       const SizedBox(height: 2),
                       Text(
-                        'Парков: ${region.parkIds.length}'
-                        '${regAdmins.isEmpty ? " · рег. админов: нет" : " · рег. админов: ${regAdmins.length}"}',
-                        style: const TextStyle(
-                            fontSize: 11.5, color: AppColors.dim),
+                        'Парков: ${region.parkIds.length} · '
+                        'Рег. админ: ${_regAdminLine(regAdmins)}',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: regAdmins.isEmpty
+                              ? AppColors.dim
+                              : AppColors.mut,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ]),
               ),
@@ -773,6 +779,13 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       city?.name,
       loc?.name,
     ].where((x) => x != null).join(' · ');
+  }
+
+  /// Строка для шапки региона: ФИО рег. админа (или «не назначен»).
+  String _regAdminLine(List<Employee> admins) {
+    if (admins.isEmpty) return 'не назначен';
+    if (admins.length == 1) return admins.first.name;
+    return '${admins.first.name} +${admins.length - 1}';
   }
 
   Widget _parkInfoBlock(Park park) {
