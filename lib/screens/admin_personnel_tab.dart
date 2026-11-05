@@ -25,9 +25,7 @@ class AdminPersonnelTab extends StatefulWidget {
 }
 
 class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
-  // 'list' | 'tree'
   String _viewMode = 'list';
-  // 'operators' | 'technicians'
   String _section = 'operators';
 
   String? _filterRegionId;
@@ -1656,6 +1654,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   Widget _actionsGrid(Employee e, StateSetter setS) {
     final hasWorkplace = _approvedParkIds(e).isNotEmpty || e.regionId != null;
+    final isFired = e.status == EmployeeStatus.fired;
     final canChangeWorkplace = e.role == EmployeeRole.regionalAdmin ||
         e.role == EmployeeRole.parkAdmin ||
         e.role == EmployeeRole.technician ||
@@ -1672,10 +1671,10 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         label: 'Статус',
         onTap: () => _changeStatus(e, setS),
       ),
-      if (canChangeWorkplace && hasWorkplace)
+      if (canChangeWorkplace && !isFired)
         _actionBtn(
-          icon: Icons.move_up,
-          label: 'Сменить место',
+          icon: hasWorkplace ? Icons.move_up : Icons.add_location_alt,
+          label: hasWorkplace ? 'Сменить место' : 'Привязать к парку',
           color: AppColors.cyn,
           onTap: () => _changeWorkplace(e, setS),
         ),
@@ -1740,7 +1739,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
   }
 
-  // ═══════════ управление ролями (мультироль) ═══════════
+  // ═══════════ управление ролями ═══════════
 
   Future<void> _manageRoles(Employee e, StateSetter setS) async {
     if (e.role.canBeAdmin) {
@@ -1923,7 +1922,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     _snack('Роли обновлены');
   }
 
-  // ═══════════ смена руководителя (мультивыбор) ═══════════
+  // ═══════════ смена руководителя ═══════════
 
   Future<void> _changeManager(Employee e, StateSetter setS) async {
     final candidates = db.allowedManagersFor(e);
@@ -2168,6 +2167,8 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         final l = db.locById(p.locId);
         initialCityId = l?.cityId;
       }
+    } else if (e.lastCityId != null) {
+      initialCityId = e.lastCityId;
     }
 
     String? cityId = initialCityId ?? cities.first.id;
@@ -2264,7 +2265,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
     db.moveToPark(e, newParkId, byAdminId: me.id);
     setS(() {});
-    _snack('Переведён в ${db.parkById(newParkId)?.name ?? "парк"}');
+    _snack('Привязан к ${db.parkById(newParkId)?.name ?? "парку"}');
   }
 
   Future<void> _changeRegion(Employee e, StateSetter setS) async {
@@ -2461,7 +2462,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     if (ok != true) return;
 
     if (sel == EmployeeStatus.fired && e.status != EmployeeStatus.fired) {
-      // Используем общий метод — он корректно закроет историю и отклонит связи
       db.fireEmployee(e);
       e.statusNote = noteCtrl.text.trim().isEmpty
           ? null
