@@ -10,6 +10,7 @@ import '../models/region.dart';
 import '../models/operator_park_link.dart';
 import '../models/shift_vacancy.dart';
 import '../theme.dart';
+import '../widgets/role_management_dialog.dart';
 
 class AdminPersonnelTab extends StatefulWidget {
   final AppDatabase db;
@@ -1742,26 +1743,48 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   // ═══════════ управление ролями ═══════════
 
   Future<void> _manageRoles(Employee e, StateSetter setS) async {
-    if (e.role.canBeAdmin) {
-      await showDialog<void>(
-        context: context,
-        useRootNavigator: true,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: const Text('Роли'),
-          content: Text(
-            'Для административных ролей управление дополнительными ролями не предусмотрено.\n\nТекущая роль: ${e.role.label}',
-            style: const TextStyle(fontSize: 13, color: AppColors.mut),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Закрыть')),
-          ],
+  if (e.role.canBeAdmin) {
+    await showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Роли'),
+        content: Text(
+          'Для административных ролей управление дополнительными ролями '
+          'выполняется в карточке сотрудника во вкладке «Администраторы».\n\n'
+          'Текущая роль: ${e.role.label}',
+          style: const TextStyle(fontSize: 13, color: AppColors.mut),
         ),
-      );
-      return;
-    }
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Закрыть')),
+        ],
+      ),
+    );
+    return;
+  }
+
+  final result = await showRoleManagementDialog(
+    context: context,
+    employee: e,
+    selectableRoles: const [
+      EmployeeRole.operator,
+      EmployeeRole.technician,
+      EmployeeRole.parkAdmin,
+    ],
+    selectableExtras: const [
+      EmployeeRole.operator,
+      EmployeeRole.technician,
+      EmployeeRole.parkAdmin,
+    ],
+  );
+  if (result == null) return;
+  db.setRoles(e, result.primary, result.extras);
+  setS(() {});
+  _snack('Роли обновлены');
+}
 
     final allRoles = [
       EmployeeRole.operator,
