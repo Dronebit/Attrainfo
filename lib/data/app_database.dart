@@ -4,14 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/enums.dart';
 import '../models/models.dart';
 import '../models/employee.dart';
+import '../models/permissions.dart';
 import '../models/operator_park_link.dart';
 import '../models/shift_vacancy.dart';
 import '../models/shift.dart';
 import '../models/region.dart';
 import 'seed.dart';
-import '../models/permissions.dart';
-
-/// Права на изменение ролей конкретного сотрудника.
 
 class AppDatabase extends ChangeNotifier {
   static const _key = 'attrakontrol-v8';
@@ -218,10 +216,6 @@ class AppDatabase extends ChangeNotifier {
 
   // ═══════════ права на изменение ролей ═══════════
 
-  /// Проверяет, какие роли [currentUser] может назначить [targetEmployee].
-  ///
-  /// В клиент-серверной архитектуре этот метод будет жить на сервере
-  /// (например, эндпоинт GET /api/employees/{id}/available-roles).
   RoleAssignmentPermissions getRoleAssignmentPermissions({
     required Employee currentUser,
     required Employee targetEmployee,
@@ -232,12 +226,10 @@ class AppDatabase extends ChangeNotifier {
       availableExtraRoles: [],
     );
 
-    // 1. Никто не может менять основную роль superAdmin
     if (targetEmployee.role == EmployeeRole.superAdmin) {
       return noPermissions;
     }
 
-    // 2. Владелец (superAdmin) может менять всё (кроме superAdmin)
     if (currentUser.role == EmployeeRole.superAdmin) {
       return const RoleAssignmentPermissions(
         canChangePrimary: true,
@@ -254,7 +246,6 @@ class AppDatabase extends ChangeNotifier {
       );
     }
 
-    // 3. Региональный админ — только доп. роли для сотрудников своего региона
     if (currentUser.role == EmployeeRole.regionalAdmin) {
       bool inRegion = targetEmployee.regionId == currentUser.regionId;
       if (!inRegion && targetEmployee.parkId != null) {
@@ -279,7 +270,6 @@ class AppDatabase extends ChangeNotifier {
       }
     }
 
-    // 4. Админ парка — только доп. роли для сотрудников своего парка
     if (currentUser.role == EmployeeRole.parkAdmin &&
         currentUser.parkId != null) {
       bool inPark = targetEmployee.parkId == currentUser.parkId;
@@ -359,17 +349,31 @@ class AppDatabase extends ChangeNotifier {
     }
   }
 
-  /// Нормализовать руководителя у ВСЕХ операторов/техников всех парков региона.
+  /// Нормализовать руководителя у всех в регионе (операторы, техники,
+  /// а также parkAdmin'ы, чтобы у них обновился список рег.админов).
   void _normalizeRegionStaff(String regionId) {
     final region = regionById(regionId);
     if (region == null) return;
     for (final pid in region.parkIds) {
       _normalizeParkStaff(pid);
+      for (final pa in parkAdminsOf(pid)) {
+        _normalizeManager(pa);
+      }
     }
   }
 
   /// Приводит [e].managerId и [e].additionalManagerIds к корректному
   /// состоянию согласно текущей роли, parkId и regionId.
+  ///
+  /// Правила:
+  /// - superAdmin, уволенный — без руководителя.
+  /// - regionalAdmin — все активные super (первый основной, остальные доп.).
+  /// - parkAdmin с парком — все активные рег.админы региона (первый основной),
+  ///   иначе все super.
+  /// - parkAdmin без парка — все super.
+  /// - operator/technician с парком — все активные parkAdmin'ы парка
+  ///   (первый основной), иначе все рег.админы региона, иначе все super.
+  /// - operator/technician без парка — без руководителя.
   void _normalizeManager(Employee e) {
     if (e.status == EmployeeStatus.fired ||
         e.role == EmployeeRole.superAdmin) {
@@ -378,41 +382,48 @@ class AppDatabase extends ChangeNotifier {
       return;
     }
 
-    final superId = _findSuperId(exceptId: e.id);
-
+    // ─── regionalAdmin → все super
     if (e.role == EmployeeRole.regionalAdmin) {
-      e.managerId = superId;
-      e.additionalManagerIds.clear();
+      final supers = superAdmins.where((s) => s.id != e.id).toList();
+      if (supers.isNotEmpty) {
+        e.managerId = supers.first.id;
+        e.additionalManagerIds = supers.skip(1).map((s) => s.id).toList();
+      } else {
+        e.managerId = null;
+        e.additionalManagerIds.clear();
+      }
       return;
     }
 
-    if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
-      final peers = parkAdminsOf(e.parkId!)
-          .where((x) => x.id != e.id)
-          .map((x) => x.id)
-          .toSet();
-      e.additionalManagerIds.removeWhere((id) => peers.contains(id));
-      if (peers.contains(e.managerId)) e.managerId = null;
-
-      String? mgr;
-      for (final reg in regionsOfPark(e.parkId!)) {
-        final ra = regionalAdminsOf(reg.id)
-            .firstWhereOrNull((x) => x.id != e.id);
-        if (ra != null) {
-          mgr = ra.id;
-          break;
+    // ─── parkAdmin → рег.админы региона, иначе super
+    if (e.role == EmployeeRole.parkAdmin) {
+      if (e.parkId != null) {
+        final ras = <Employee>[];
+        for (final reg in regionsOfPark(e.parkId!)) {
+          for (final ra in regionalAdminsOf(reg.id)) {
+            if (ra.id != e.id && !ras.any((x) => x.id == ra.id)) {
+              ras.add(ra);
+            }
+          }
+        }
+        if (ras.isNotEmpty) {
+          e.managerId = ras.first.id;
+          e.additionalManagerIds = ras.skip(1).map((x) => x.id).toList();
+          return;
         }
       }
-      e.managerId = mgr ?? superId;
+      final supers = superAdmins.where((s) => s.id != e.id).toList();
+      if (supers.isNotEmpty) {
+        e.managerId = supers.first.id;
+        e.additionalManagerIds = supers.skip(1).map((s) => s.id).toList();
+      } else {
+        e.managerId = null;
+        e.additionalManagerIds.clear();
+      }
       return;
     }
 
-    if (e.role == EmployeeRole.parkAdmin) {
-      e.managerId = superId;
-      e.additionalManagerIds.clear();
-      return;
-    }
-
+    // ─── operator / technician → админы парка, иначе рег.админы, иначе super
     String? parkForMgr;
     if (e.parkId != null) {
       parkForMgr = e.parkId;
@@ -427,26 +438,40 @@ class AppDatabase extends ChangeNotifier {
       return;
     }
 
-    final pa = parkAdminsOf(parkForMgr)
-        .firstWhereOrNull((x) => x.id != e.id);
-    if (pa != null) {
-      e.managerId = pa.id;
-      e.additionalManagerIds.clear();
+    // Все админы парка
+    final pas = parkAdminsOf(parkForMgr)
+        .where((x) => x.id != e.id)
+        .toList();
+    if (pas.isNotEmpty) {
+      e.managerId = pas.first.id;
+      e.additionalManagerIds = pas.skip(1).map((x) => x.id).toList();
       return;
     }
 
+    // Все рег.админы региона
+    final ras = <Employee>[];
     for (final reg in regionsOfPark(parkForMgr)) {
-      final ra = regionalAdminsOf(reg.id)
-          .firstWhereOrNull((x) => x.id != e.id);
-      if (ra != null) {
-        e.managerId = ra.id;
-        e.additionalManagerIds.clear();
-        return;
+      for (final ra in regionalAdminsOf(reg.id)) {
+        if (ra.id != e.id && !ras.any((x) => x.id == ra.id)) {
+          ras.add(ra);
+        }
       }
     }
+    if (ras.isNotEmpty) {
+      e.managerId = ras.first.id;
+      e.additionalManagerIds = ras.skip(1).map((x) => x.id).toList();
+      return;
+    }
 
-    e.managerId = superId;
-    e.additionalManagerIds.clear();
+    // Все super
+    final supers = superAdmins.where((s) => s.id != e.id).toList();
+    if (supers.isNotEmpty) {
+      e.managerId = supers.first.id;
+      e.additionalManagerIds = supers.skip(1).map((s) => s.id).toList();
+    } else {
+      e.managerId = null;
+      e.additionalManagerIds.clear();
+    }
   }
 
   // ═══════════ регионы ═══════════
@@ -618,7 +643,6 @@ class AppDatabase extends ChangeNotifier {
       _normalizeParkStaff(oldParkId);
     }
 
-    _subordinateParkStaffTo(admin, park);
     _normalizeParkStaff(park.id);
 
     save();
@@ -668,19 +692,6 @@ class AppDatabase extends ChangeNotifier {
       _normalizeRegionStaff(oldRegionId);
     }
 
-    _subordinateOrphanParkStaff(admin, region);
-
-    final superId = _findSuperId(exceptId: admin.id);
-    for (final pid in region.parkIds) {
-      for (final pa in parkAdminsOf(pid)) {
-        if (pa.id == admin.id) continue;
-        if (pa.managerId == null || pa.managerId == superId) {
-          pa.managerId = admin.id;
-          pa.additionalManagerIds.remove(admin.id);
-        }
-      }
-    }
-
     _normalizeRegionStaff(region.id);
 
     save();
@@ -712,100 +723,6 @@ class AppDatabase extends ChangeNotifier {
       if (h.isCurrent) {
         h.endedAt = now;
         h.reason = reason;
-      }
-    }
-  }
-
-  void _subordinateParkStaffTo(Employee admin, Park park) {
-    bool needsAdditional(Employee e) {
-      if (e.managerId == null) return false;
-      if (e.managerId == admin.id) return false;
-      final cur = employeeById(e.managerId);
-      return cur != null && cur.status != EmployeeStatus.fired;
-    }
-
-    void addManager(Employee e) {
-      if (e.id == admin.id) return;
-      if (e.managerId == admin.id) return;
-      if (e.additionalManagerIds.contains(admin.id)) return;
-      if (needsAdditional(e)) {
-        e.additionalManagerIds.add(admin.id);
-      } else {
-        e.managerId = admin.id;
-        e.additionalManagerIds.remove(admin.id);
-      }
-    }
-
-    final regionAdminIds = <String>{};
-    for (final reg in regionsOfPark(park.id)) {
-      for (final ra in regionalAdminsOf(reg.id)) {
-        if (ra.id != admin.id) regionAdminIds.add(ra.id);
-      }
-    }
-
-    void removeRegionAdmins(Employee e) {
-      for (final id in regionAdminIds) {
-        if (e.managerId == id) e.managerId = null;
-        e.additionalManagerIds.remove(id);
-      }
-    }
-
-    for (final link in operatorLinks) {
-      if (link.parkId == park.id && link.status == LinkStatus.approved) {
-        final op = employeeById(link.operatorId);
-        if (op != null && op.status != EmployeeStatus.fired) {
-          removeRegionAdmins(op);
-          addManager(op);
-        }
-      }
-    }
-
-    for (final e in employees) {
-      if (e.status == EmployeeStatus.fired) continue;
-      if (e.hasRole(EmployeeRole.technician) && e.parkId == park.id) {
-        removeRegionAdmins(e);
-        addManager(e);
-      }
-    }
-  }
-
-  void _subordinateOrphanParkStaff(Employee admin, Region region) {
-    bool needsAdditional(Employee e) {
-      if (e.managerId == null) return false;
-      if (e.managerId == admin.id) return false;
-      final cur = employeeById(e.managerId);
-      return cur != null && cur.status != EmployeeStatus.fired;
-    }
-
-    void addManager(Employee e) {
-      if (e.id == admin.id) return;
-      if (e.managerId == admin.id) return;
-      if (e.additionalManagerIds.contains(admin.id)) return;
-      if (needsAdditional(e)) {
-        e.additionalManagerIds.add(admin.id);
-      } else {
-        e.managerId = admin.id;
-        e.additionalManagerIds.remove(admin.id);
-      }
-    }
-
-    for (final pid in region.parkIds) {
-      if (parkAdminsOf(pid).isNotEmpty) continue;
-
-      for (final link in operatorLinks) {
-        if (link.parkId == pid && link.status == LinkStatus.approved) {
-          final op = employeeById(link.operatorId);
-          if (op != null && op.status != EmployeeStatus.fired) {
-            addManager(op);
-          }
-        }
-      }
-
-      for (final e in employees) {
-        if (e.status == EmployeeStatus.fired) continue;
-        if (e.hasRole(EmployeeRole.technician) && e.parkId == pid) {
-          addManager(e);
-        }
       }
     }
   }
@@ -888,11 +805,7 @@ class AppDatabase extends ChangeNotifier {
     }
 
     if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
-      final park = parkById(e.parkId!);
-      if (park != null) {
-        _subordinateParkStaffTo(e, park);
-        _normalizeParkStaff(park.id);
-      }
+      _normalizeParkStaff(e.parkId!);
     }
 
     save();
@@ -955,11 +868,7 @@ class AppDatabase extends ChangeNotifier {
     }
 
     if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
-      final p = parkById(e.parkId!);
-      if (p != null) {
-        _subordinateParkStaffTo(e, p);
-        _normalizeParkStaff(p.id);
-      }
+      _normalizeParkStaff(e.parkId!);
     }
 
     _addHistory(e, e.role, parkId: parkId);
@@ -992,11 +901,7 @@ class AppDatabase extends ChangeNotifier {
       _normalizeRegionStaff(oldRegionId);
     }
 
-    final newRegion = regionById(regionId);
-    if (newRegion != null) {
-      _subordinateOrphanParkStaff(e, newRegion);
-      _normalizeRegionStaff(regionId);
-    }
+    _normalizeRegionStaff(regionId);
 
     save();
   }
