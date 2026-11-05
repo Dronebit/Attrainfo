@@ -447,6 +447,36 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
+/// Снимает регионального админа с должности.
+///
+/// Освобождает regionId/parkId, отвязывает его от операторов/техников
+/// всех парков региона. Если [byAdminId] передан — ставит его как
+/// основного руководителя снятого.
+void removeRegionalAdmin(Employee admin, {String? byAdminId}) {
+  final now = DateTime.now();
+  final removedRegionId = admin.regionId;
+
+  _closeCurrentHistory(admin, 'Снят с должности');
+
+  admin.regionId = null;
+  admin.parkId = null;
+  admin.status = EmployeeStatus.active;
+  admin.statusChangedAt = now;
+
+  if (byAdminId != null) {
+    admin.managerId = byAdminId;
+  }
+
+  if (removedRegionId != null) {
+    final region = regionById(removedRegionId);
+    if (region != null) _detachFromRegionStaff(admin, region);
+  }
+
+  save();
+}
+
+  
+
   void assignRegionalAdmin(Employee admin, Region region, {String? reason}) {
     final now = DateTime.now();
     final oldParkId = admin.parkId;
