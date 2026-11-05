@@ -25,11 +25,34 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   bool _superCollapsed = false;
   bool _freeParkCollapsed = false;
   bool _freeRegionCollapsed = false;
+  bool _showFired = false;
 
   String _uid() => 'x${DateTime.now().microsecondsSinceEpoch}';
 
   AppDatabase get db => widget.db;
   Employee get me => widget.currentAdmin;
+
+  // ═══════════ фильтрованные списки ═══════════
+
+  List<Employee> _regAdminsFor(String regionId) {
+    return db.employees
+        .where((e) =>
+            e.role == EmployeeRole.regionalAdmin &&
+            e.regionId == regionId &&
+            (_showFired || e.status == EmployeeStatus.active))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  List<Employee> _parkAdminsFor(String parkId) {
+    return db.employees
+        .where((e) =>
+            e.role == EmployeeRole.parkAdmin &&
+            e.parkId == parkId &&
+            (_showFired || e.status == EmployeeStatus.active))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +88,41 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
         label: 'Админ парка',
         onTap: _createParkAdmin,
       ),
+      const SizedBox(width: 8),
+      _firedToggle(),
     ]);
+  }
+
+  Widget _firedToggle() {
+    final active = _showFired;
+    return Tooltip(
+      message: active
+          ? 'Скрыть уволенных'
+          : 'Показать уволенных',
+      child: InkWell(
+        onTap: () => setState(() => _showFired = !_showFired),
+        borderRadius: BorderRadius.circular(9),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.red.withValues(alpha: 0.12)
+                : AppColors.panel2,
+            border: Border.all(
+              color: active
+                  ? AppColors.red.withValues(alpha: 0.4)
+                  : AppColors.line2,
+            ),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(
+            active ? Icons.visibility : Icons.visibility_off,
+            size: 16,
+            color: active ? AppColors.red : AppColors.mut,
+          ),
+        ),
+      ),
+    );
   }
 
   // ═══════════ Super-блок ═══════════
@@ -147,11 +204,11 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   }
 
   Widget _regionNode(Region region) {
-    final regAdmins = db.regionalAdminsOf(region.id);
+    final regAdmins = _regAdminsFor(region.id);
     final parks = db.parksOfRegion(region.id);
     final collapsed = _collapsedRegions.contains(region.id);
     final totalAdmins = regAdmins.length +
-        parks.fold<int>(0, (a, p) => a + db.parkAdminsOf(p.id).length);
+        parks.fold<int>(0, (a, p) => a + _parkAdminsFor(p.id).length);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -261,7 +318,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   }
 
   Widget _parkNode(Park park) {
-    final admins = db.parkAdminsOf(park.id);
+    final admins = _parkAdminsFor(park.id);
     final collapsed = _collapsedParks.contains(park.id);
 
     return Container(
@@ -375,7 +432,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
 
   Widget _freeParkAdminsSection() {
     final free = db.employees.where((a) {
-      if (a.status != EmployeeStatus.active) return false;
+      if (!_showFired && a.status != EmployeeStatus.active) return false;
       if (a.role != EmployeeRole.parkAdmin) return false;
       if (a.parkId != null) return false;
       return true;
@@ -442,7 +499,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
 
   Widget _freeRegionalAdminsSection() {
     final free = db.employees.where((a) {
-      if (a.status != EmployeeStatus.active) return false;
+      if (!_showFired && a.status != EmployeeStatus.active) return false;
       if (a.role != EmployeeRole.regionalAdmin) return false;
       if (a.regionId != null) return false;
       return true;
@@ -509,11 +566,15 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
 
   Widget _adminRow(Employee e) {
     final statusColor = Color(e.status.colorValue);
+    final isFired = e.status == EmployeeStatus.fired;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
         color: const Color(0xFF0A0E14),
         borderRadius: BorderRadius.circular(6),
+        border: isFired
+            ? Border.all(color: AppColors.red.withValues(alpha: 0.25))
+            : null,
       ),
       child: InkWell(
         onTap: () => _openAdminCard(e),
@@ -542,14 +603,24 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(e.name,
-                      style: const TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          decoration: isFired
+                              ? TextDecoration.lineThrough
+                              : null,
+                          color: isFired
+                              ? AppColors.dim
+                              : AppColors.txt),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                   Text(
                     'PIN ${e.pin} · ${e.role.label}${e.status != EmployeeStatus.active ? " · ${e.status.label}" : ""}',
-                    style: const TextStyle(
-                        fontSize: 10, color: AppColors.dim),
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: isFired
+                            ? AppColors.red.withValues(alpha: 0.7)
+                            : AppColors.dim),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -648,8 +719,9 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                     if (region != null) _infoLine('Регион', region.name),
                     if (park != null) _infoLine('Парк', park.name),
                     if (region == null && park == null && !isSuper)
-                      _infoLine('Место работы', 'Свободен',
-                          color: AppColors.org),
+                      _infoLine('Место работы',
+                          isFired ? 'Уволен' : 'Свободен',
+                          color: isFired ? AppColors.red : AppColors.org),
                     const SizedBox(height: 14),
                     if (!isSuper && !isFired) ...[
                       if (isPark) ...[
