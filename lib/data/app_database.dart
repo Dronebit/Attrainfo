@@ -230,6 +230,7 @@ class AppDatabase extends ChangeNotifier {
       return noPermissions;
     }
 
+    // 1. Владелец может всё (кроме superAdmin)
     if (currentUser.role == EmployeeRole.superAdmin) {
       return const RoleAssignmentPermissions(
         canChangePrimary: true,
@@ -246,6 +247,7 @@ class AppDatabase extends ChangeNotifier {
       );
     }
 
+    // 2. Региональный админ — может менять роли подчинённым в своём регионе
     if (currentUser.role == EmployeeRole.regionalAdmin) {
       bool inRegion = targetEmployee.regionId == currentUser.regionId;
       if (!inRegion && targetEmployee.parkId != null) {
@@ -260,8 +262,12 @@ class AppDatabase extends ChangeNotifier {
 
       if (inRegion) {
         return const RoleAssignmentPermissions(
-          canChangePrimary: false,
-          availablePrimaryRoles: [],
+          canChangePrimary: true, // Разрешаем менять основную роль
+          availablePrimaryRoles: [
+            EmployeeRole.parkAdmin, // Может сделать админом парка
+            EmployeeRole.operator,  // Может разжаловать в оператора
+            EmployeeRole.technician,// Или в механика
+          ],
           availableExtraRoles: [
             EmployeeRole.operator,
             EmployeeRole.technician,
@@ -270,6 +276,7 @@ class AppDatabase extends ChangeNotifier {
       }
     }
 
+    // 3. Админ парка — может менять доп. роли и переключать оператор/механик
     if (currentUser.role == EmployeeRole.parkAdmin &&
         currentUser.parkId != null) {
       bool inPark = targetEmployee.parkId == currentUser.parkId;
@@ -280,8 +287,11 @@ class AppDatabase extends ChangeNotifier {
 
       if (inPark) {
         return const RoleAssignmentPermissions(
-          canChangePrimary: false,
-          availablePrimaryRoles: [],
+          canChangePrimary: true, // Разрешаем менять основную роль (но без parkAdmin!)
+          availablePrimaryRoles: [
+            EmployeeRole.operator,
+            EmployeeRole.technician,
+          ],
           availableExtraRoles: [
             EmployeeRole.operator,
             EmployeeRole.technician,
@@ -319,7 +329,6 @@ class AppDatabase extends ChangeNotifier {
     ));
   }
 
-  /// Нормализовать руководителя у всех, у кого [e] в руководителях.
   void _normalizeReportsOf(Employee e) {
     final reportIds = <String>{};
     for (final x in employees) {
@@ -334,7 +343,6 @@ class AppDatabase extends ChangeNotifier {
     }
   }
 
-  /// Нормализовать руководителя у ВСЕХ операторов/техников парка.
   void _normalizeParkStaff(String parkId) {
     for (final link in operatorLinks) {
       if (link.parkId == parkId && link.status == LinkStatus.approved) {
@@ -349,8 +357,6 @@ class AppDatabase extends ChangeNotifier {
     }
   }
 
-  /// Нормализовать руководителя у всех в регионе (операторы, техники,
-  /// а также parkAdmin'ы, чтобы у них обновился список рег.админов).
   void _normalizeRegionStaff(String regionId) {
     final region = regionById(regionId);
     if (region == null) return;
@@ -362,18 +368,6 @@ class AppDatabase extends ChangeNotifier {
     }
   }
 
-  /// Приводит [e].managerId и [e].additionalManagerIds к корректному
-  /// состоянию согласно текущей роли, parkId и regionId.
-  ///
-  /// Правила:
-  /// - superAdmin, уволенный — без руководителя.
-  /// - regionalAdmin — все активные super (первый основной, остальные доп.).
-  /// - parkAdmin с парком — все активные рег.админы региона (первый основной),
-  ///   иначе все super.
-  /// - parkAdmin без парка — все super.
-  /// - operator/technician с парком — все активные parkAdmin'ы парка
-  ///   (первый основной), иначе все рег.админы региона, иначе все super.
-  /// - operator/technician без парка — без руководителя.
   void _normalizeManager(Employee e) {
     if (e.status == EmployeeStatus.fired ||
         e.role == EmployeeRole.superAdmin) {
@@ -382,7 +376,6 @@ class AppDatabase extends ChangeNotifier {
       return;
     }
 
-    // ─── regionalAdmin → все super
     if (e.role == EmployeeRole.regionalAdmin) {
       final supers = superAdmins.where((s) => s.id != e.id).toList();
       if (supers.isNotEmpty) {
@@ -395,7 +388,6 @@ class AppDatabase extends ChangeNotifier {
       return;
     }
 
-    // ─── parkAdmin → рег.админы региона, иначе super
     if (e.role == EmployeeRole.parkAdmin) {
       if (e.parkId != null) {
         final ras = <Employee>[];
@@ -423,7 +415,6 @@ class AppDatabase extends ChangeNotifier {
       return;
     }
 
-    // ─── operator / technician → админы парка, иначе рег.админы, иначе super
     String? parkForMgr;
     if (e.parkId != null) {
       parkForMgr = e.parkId;
@@ -438,7 +429,6 @@ class AppDatabase extends ChangeNotifier {
       return;
     }
 
-    // Все админы парка
     final pas = parkAdminsOf(parkForMgr)
         .where((x) => x.id != e.id)
         .toList();
@@ -448,7 +438,6 @@ class AppDatabase extends ChangeNotifier {
       return;
     }
 
-    // Все рег.админы региона
     final ras = <Employee>[];
     for (final reg in regionsOfPark(parkForMgr)) {
       for (final ra in regionalAdminsOf(reg.id)) {
@@ -463,7 +452,6 @@ class AppDatabase extends ChangeNotifier {
       return;
     }
 
-    // Все super
     final supers = superAdmins.where((s) => s.id != e.id).toList();
     if (supers.isNotEmpty) {
       e.managerId = supers.first.id;
