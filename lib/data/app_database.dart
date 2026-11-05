@@ -131,7 +131,7 @@ class AppDatabase extends ChangeNotifier {
           e.status == EmployeeStatus.active)
       .toList();
 
-  // ═══════════ иерархия (managerId + additionalManagerIds) ═══════════
+  // ═══════════ иерархия ═══════════
 
   List<Employee> allowedManagersFor(Employee e) {
     final roles = e.role.allowedManagerRoles;
@@ -397,19 +397,12 @@ class AppDatabase extends ChangeNotifier {
 
   // ═══════════ назначение / снятие админов ═══════════
 
-  /// Назначает сотрудника администратором парка.
-  ///
-  /// Если переезжает из другого парка:
-  /// - отвязывает от старого парка;
-  /// - если старый парк остался без активных админов — возвращает
-  ///   его операторов/техников под рег.админа региона (или super).
   void assignAdminToPark(Employee admin, Park park, {String? reason}) {
     final now = DateTime.now();
     final oldParkId = admin.parkId;
 
     _closeCurrentHistory(admin, reason ?? 'Назначен администратором');
 
-    // Если переезжает из другого парка — отвязать от старого
     if (oldParkId != null && oldParkId != park.id) {
       final oldPark = parkById(oldParkId);
       if (oldPark != null) {
@@ -433,7 +426,6 @@ class AppDatabase extends ChangeNotifier {
     final loc = locById(park.locId);
     if (loc != null) admin.lastCityId = loc.cityId;
 
-    // Если старый парк остался без админа — вернуть под рег.админа
     if (oldParkId != null &&
         oldParkId != park.id &&
         parkAdminsOf(oldParkId).isEmpty) {
@@ -450,11 +442,6 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  /// Снимает админа парка с должности.
-  ///
-  /// Освобождает parkId/regionId, отвязывает его от операторов/техников парка.
-  /// Если после снятия у парка не осталось активных админов — возвращает
-  /// операторов и техников под управление рег. админа региона.
   void removeAdminFromPark(Employee admin, {String? byAdminId}) {
     final now = DateTime.now();
     final removedParkId = admin.parkId;
@@ -489,13 +476,6 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  /// Назначает сотрудника региональным администратором.
-  ///
-  /// Закрывает текущую запись в истории, создаёт новую (regionalAdmin → region),
-  /// ставит super как руководителя, чистит старых подчинённых (если был
-  /// парковым или рег. админом) и подчиняет:
-  /// - операторов и техников парков региона без активного parkAdmin'а;
-  /// - parkAdmin'ов региона, у которых руководитель — super или не назначен.
   void assignRegionalAdmin(Employee admin, Region region, {String? reason}) {
     final now = DateTime.now();
     final oldParkId = admin.parkId;
@@ -529,11 +509,8 @@ class AppDatabase extends ChangeNotifier {
     final superAdmin = superAdmins.firstWhereOrNull((s) => s.id != admin.id);
     if (superAdmin != null) admin.managerId = superAdmin.id;
 
-    // Операторы/техники парков региона без активного parkAdmin'а
     _subordinateOrphanParkStaff(admin, region);
 
-    // parkAdmin'ы региона, у которых руководитель = super (или не назначен)
-    // — подчинить новому рег.админу
     final superId = superAdmin?.id;
     for (final pid in region.parkIds) {
       for (final pa in parkAdminsOf(pid)) {
@@ -547,15 +524,6 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  /// Снимает регионального админа с должности.
-  ///
-  /// Освобождает regionId/parkId, отвязывает его от операторов/техников
-  /// всех парков региона и от parkAdmin'ов региона. Роль принудительно
-  /// ставится `regionalAdmin`, чтобы после снятия сотрудник попадал
-  /// в «Свободные рег. админы».
-  ///
-  /// parkAdmin'ы региона переподчиняются другому активному рег.админу
-  /// этого региона (если есть) или super-админу.
   void removeRegionalAdmin(Employee admin, {String? byAdminId}) {
     final now = DateTime.now();
     final removedRegionId = admin.regionId;
@@ -575,11 +543,8 @@ class AppDatabase extends ChangeNotifier {
     if (removedRegionId != null) {
       final region = regionById(removedRegionId);
       if (region != null) {
-        // Операторы/техники парков региона
         _detachFromRegionStaff(admin, region);
 
-        // Найти замену для parkAdmin'ов:
-        // другой активный рег.админ этого же региона, иначе super
         final replacementRegAdmin = regionalAdminsOf(region.id)
             .firstWhereOrNull((x) => x.id != admin.id);
         final replacementSuper = superAdmins
@@ -587,7 +552,6 @@ class AppDatabase extends ChangeNotifier {
         final replacementId =
             replacementRegAdmin?.id ?? replacementSuper?.id;
 
-        // parkAdmin'ы региона — отвязать от снятого и переподчинить
         for (final pid in region.parkIds) {
           for (final pa in parkAdminsOf(pid)) {
             if (pa.id == admin.id) continue;
@@ -651,8 +615,6 @@ class AppDatabase extends ChangeNotifier {
       }
     }
 
-    // Рег. админы региона парка — временные руководители.
-    // Убираем их, когда появляется парковый админ.
     final regionAdminIds = <String>{};
     for (final reg in regionsOfPark(park.id)) {
       for (final ra in regionalAdminsOf(reg.id)) {
@@ -767,7 +729,8 @@ class AppDatabase extends ChangeNotifier {
   ///
   /// При понижении с parkAdmin — отвязывает операторов/техников парка.
   /// При понижении с regionalAdmin — отвязывает операторов/техников региона.
-  /// При повышении до parkAdmin с уже известным parkId — подчиняет парк.
+  /// При повышении до parkAdmin (был operator/technician) — если есть
+  /// approved-парк оператора, привязывает к нему и подчиняет сотрудников.
   void setRoles(Employee e, EmployeeRole primary, List<EmployeeRole> extras) {
     final now = DateTime.now();
     final oldPrimary = e.role;
@@ -834,10 +797,25 @@ class AppDatabase extends ChangeNotifier {
       }
     }
 
+    // Повышение до parkAdmin — если parkId ещё не установлен,
+    // взять approved-парк оператора (чтобы не остался «свободным»)
+    if (primary == EmployeeRole.parkAdmin &&
+        oldPrimary != EmployeeRole.parkAdmin &&
+        e.parkId == null) {
+      final approvedParks = approvedParkIdsForOperator(e.id);
+      if (approvedParks.isNotEmpty) {
+        e.parkId = approvedParks.first;
+        e.regionId = null;
+      }
+    }
+
     // Стал parkAdmin с известным parkId — подчинить парк
     if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
       final park = parkById(e.parkId!);
-      if (park != null) _subordinateParkStaffTo(e, park);
+      if (park != null) {
+        _autoAssignManager(e, park);
+        _subordinateParkStaffTo(e, park);
+      }
     }
 
     save();
@@ -980,7 +958,12 @@ class AppDatabase extends ChangeNotifier {
     save();
   }
 
-  void detachFromPark(Employee e) {
+  /// Отвязывает сотрудника от парка/региона.
+  ///
+  /// [clearManager] — если true, сразу очистить руководителя и доп.
+  /// руководителей. По умолчанию менеджер не трогается — UI может
+  /// спросить об этом отдельно.
+  void detachFromPark(Employee e, {bool clearManager = false}) {
     final now = DateTime.now();
     _closeCurrentHistory(e, 'Отвязан от парка');
 
@@ -995,12 +978,24 @@ class AppDatabase extends ChangeNotifier {
     e.status = EmployeeStatus.active;
     e.statusChangedAt = now;
 
+    if (clearManager) {
+      e.managerId = null;
+      e.additionalManagerIds.clear();
+    }
+
     e.history.add(RoleHistoryEntry(
       id: 'h${DateTime.now().microsecondsSinceEpoch}',
       role: e.role,
       startedAt: now,
     ));
 
+    save();
+  }
+
+  /// Очищает руководителя у сотрудника (без отвязки от парка).
+  void clearManager(Employee e) {
+    e.managerId = null;
+    e.additionalManagerIds.clear();
     save();
   }
 
