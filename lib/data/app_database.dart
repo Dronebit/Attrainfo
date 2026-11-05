@@ -423,41 +423,48 @@ class AppDatabase extends ChangeNotifier {
 
     save();
   }
+/// Снимает админа парка с должности.
+///
+/// Освобождает parkId/regionId, отвязывает его от операторов/техников парка.
+/// Роль принудительно ставится `parkAdmin`, чтобы после снятия
+/// сотрудник попадал в «Свободные админы парков».
+void removeAdminFromPark(Employee admin, {String? byAdminId}) {
+  final now = DateTime.now();
+  final removedParkId = admin.parkId;
 
-  void removeAdminFromPark(Employee admin, {String? byAdminId}) {
-    final now = DateTime.now();
-    final removedParkId = admin.parkId;
+  _closeCurrentHistory(admin, 'Снят с должности');
 
-    _closeCurrentHistory(admin, 'Снят с должности');
+  admin.role = EmployeeRole.parkAdmin;
+  admin.parkId = null;
+  admin.regionId = null;
+  admin.status = EmployeeStatus.active;
+  admin.statusChangedAt = now;
 
-    admin.parkId = null;
-    admin.regionId = null;
-    admin.status = EmployeeStatus.active;
-    admin.statusChangedAt = now;
-
-    if (byAdminId != null) {
-      admin.managerId = byAdminId;
-    }
-
-    if (removedParkId != null) {
-      final park = parkById(removedParkId);
-      if (park != null) _detachFromParkStaff(admin, park);
-    }
-
-    save();
+  if (byAdminId != null) {
+    admin.managerId = byAdminId;
   }
+
+  if (removedParkId != null) {
+    final park = parkById(removedParkId);
+    if (park != null) _detachFromParkStaff(admin, park);
+  }
+
+  save();
+}
+  
 
 /// Снимает регионального админа с должности.
 ///
 /// Освобождает regionId/parkId, отвязывает его от операторов/техников
-/// всех парков региона. Если [byAdminId] передан — ставит его как
-/// основного руководителя снятого.
+/// всех парков региона. Роль принудительно ставится `regionalAdmin`,
+/// чтобы после снятия сотрудник попадал в «Свободные рег. админы».
 void removeRegionalAdmin(Employee admin, {String? byAdminId}) {
   final now = DateTime.now();
   final removedRegionId = admin.regionId;
 
   _closeCurrentHistory(admin, 'Снят с должности');
 
+  admin.role = EmployeeRole.regionalAdmin;
   admin.regionId = null;
   admin.parkId = null;
   admin.status = EmployeeStatus.active;
@@ -474,7 +481,6 @@ void removeRegionalAdmin(Employee admin, {String? byAdminId}) {
 
   save();
 }
-
   
 
   void assignRegionalAdmin(Employee admin, Region region, {String? reason}) {
