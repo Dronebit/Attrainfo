@@ -178,6 +178,21 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   List<String> _parksOf(Employee e) => _approvedParkIds(e);
 
+  /// Свободен = нет рабочего места.
+  bool _isFree(Employee e) {
+    if (e.role == EmployeeRole.superAdmin) return false;
+    if (e.role == EmployeeRole.regionalAdmin) return e.regionId == null;
+    if (e.role == EmployeeRole.parkAdmin) return e.parkId == null;
+    if (e.parkId != null) return false;
+    if (e.hasRole(EmployeeRole.operator) &&
+        db
+            .linksForOperator(e.id)
+            .any((l) => l.status == LinkStatus.approved)) {
+      return false;
+    }
+    return true;
+  }
+
   // ═══════════ build ═══════════
 
   @override
@@ -504,14 +519,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   padding: EdgeInsets.zero,
                   minimumSize: const Size(0, 30),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-              onPressed: () => setState(() {
-                _filterRegionId = null;
-                _filterCityId = null;
-                _filterStatus = null;
-                _filterRole = null;
-                _query = '';
-                _searchCtrl.clear();
-              }),
+              onPressed: _clearFilters,
               child: const Text('Сбросить', style: TextStyle(fontSize: 11.5)),
             ),
         ]),
@@ -530,6 +538,17 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         }),
       if (loose.isNotEmpty) _looseBlock(loose),
     ]);
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _filterRegionId = null;
+      _filterCityId = null;
+      _filterStatus = null;
+      _filterRole = null;
+      _query = '';
+      _searchCtrl.clear();
+    });
   }
 
   Widget _emptyState() => Container(
@@ -841,7 +860,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                 const Icon(Icons.link_off, size: 13, color: AppColors.org),
                 const SizedBox(width: 6),
                 const Expanded(
-                  child: Text('Без привязки к парку',
+                  child: Text('Без привязки к рабочему месту',
                       style: TextStyle(
                           fontSize: 12.5, fontWeight: FontWeight.w700)),
                 ),
@@ -880,14 +899,19 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   Widget _buildTreeBody() {
     final all = _filteredAll();
-    final visibleIds = all.map((e) => e.id).toSet();
 
-    final roots = all.where((e) {
+    final free = all.where(_isFree).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+    final inTree = all.where((e) => !_isFree(e)).toList();
+    final treeVisibleIds = inTree.map((e) => e.id).toSet();
+
+    final roots = inTree.where((e) {
       if (e.managerId == null) return true;
       final mgr = db.employeeById(e.managerId);
       if (mgr == null) return true;
       if (mgr.status == EmployeeStatus.fired) return true;
-      if (!visibleIds.contains(mgr.id)) return true;
+      if (!treeVisibleIds.contains(mgr.id)) return true;
       return false;
     }).toList()
       ..sort((a, b) {
@@ -897,17 +921,13 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         return a.name.compareTo(b.name);
       });
 
-    if (roots.isEmpty) {
-      return _emptyState();
-    }
-
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(children: [
           Expanded(
             child: Text(
-              'Найдено: ${all.length}',
+              'В иерархии: ${inTree.length} · Свободных: ${free.length}',
               style: const TextStyle(fontSize: 11, color: AppColors.dim),
             ),
           ),
@@ -917,20 +937,27 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
                   padding: EdgeInsets.zero,
                   minimumSize: const Size(0, 30),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-              onPressed: () => setState(() {
-                _filterRegionId = null;
-                _filterCityId = null;
-                _filterStatus = null;
-                _filterRole = null;
-                _query = '';
-                _searchCtrl.clear();
-              }),
+              onPressed: _clearFilters,
               child: const Text('Сбросить', style: TextStyle(fontSize: 11.5)),
             ),
         ]),
       ),
       const SizedBox(height: 4),
-      ...roots.map((e) => _treeNode(e, visibleIds, 0)),
+      if (inTree.isEmpty)
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 30),
+          decoration: _cardDeco,
+          child: const Center(
+            child: Text('Сотрудников в иерархии нет',
+                style: TextStyle(color: AppColors.dim, fontSize: 12)),
+          ),
+        )
+      else
+        ...roots.map((e) => _treeNode(e, treeVisibleIds, 0)),
+      if (free.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _looseBlock(free),
+      ],
     ]);
   }
 
@@ -1072,7 +1099,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     if (e.role == EmployeeRole.superAdmin) return 'Super';
     if (e.role == EmployeeRole.regionalAdmin) {
       final r = e.regionId == null ? null : db.regionById(e.regionId);
-      return r == null ? 'Региональный админ' : 'Регион: ${r.name}';
+      return r == null ? 'Свободен' : 'Регион: ${r.name}';
     }
     final parks = _approvedParkIds(e);
     if (parks.isEmpty) return 'Свободен';
@@ -1741,7 +1768,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
   }
 
-  // ═══════════ управление ролями (вынесенный виджет) ═══════════
+  // ═══════════ управление ролями ═══════════
 
   Future<void> _manageRoles(Employee e, StateSetter setS) async {
     if (e.role == EmployeeRole.superAdmin) {
@@ -1766,7 +1793,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       if (result == null) return;
       db.setRoles(e, result.primary, result.extras);
       setS(() {});
-      _snack('Роли обновлены');
+      _snackAfterRoles(e);
       return;
     }
 
@@ -1787,7 +1814,20 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     if (result == null) return;
     db.setRoles(e, result.primary, result.extras);
     setS(() {});
-    _snack('Роли обновлены');
+    _snackAfterRoles(e);
+  }
+
+  void _snackAfterRoles(Employee e) {
+    if (e.role == EmployeeRole.parkAdmin) {
+      final park = e.parkId == null ? null : db.parkById(e.parkId);
+      if (park != null) {
+        _snack('Назначен админом парка «${park.name}»');
+      } else {
+        _snack('Админ без парка — назначьте через «Сменить место»');
+      }
+    } else {
+      _snack('Роли обновлены');
+    }
   }
 
   // ═══════════ смена руководителя ═══════════
@@ -2000,9 +2040,58 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
     if (ok != true) return;
 
+    // Запоминаем — был ли руководитель до отвязки
+    final hadManager =
+        e.managerId != null || e.additionalManagerIds.isNotEmpty;
+    final managersBefore = hadManager ? db.managersOf(e) : <Employee>[];
+
     db.detachFromPark(e);
     setS(() {});
     _snack('${e.name} отвязан от парка');
+
+    if (!hadManager || managersBefore.isEmpty) return;
+    if (!mounted) return;
+
+    final clearMgr = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Отвязать руководителя?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'У «${e.name}» остался руководитель: '
+              '${managersBefore.map((m) => m.name).join(', ')}.',
+              style: const TextStyle(fontSize: 13, color: AppColors.mut),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Отвязать и руководителя (сделать без руководителя)?',
+              style: TextStyle(fontSize: 12.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Оставить')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Отвязать'),
+          ),
+        ],
+      ),
+    );
+    if (clearMgr == true) {
+      db.clearManager(e);
+      setS(() {});
+      _snack('Руководитель отвязан');
+    }
   }
 
   Future<void> _changeWorkplace(Employee e, StateSetter setS) async {
