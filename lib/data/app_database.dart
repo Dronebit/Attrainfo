@@ -8,6 +8,7 @@ import '../models/operator_park_link.dart';
 import '../models/shift_vacancy.dart';
 import '../models/shift.dart';
 import '../models/region.dart';
+import '../models/permissions.dart';
 import 'seed.dart';
 
 class AppDatabase extends ChangeNotifier {
