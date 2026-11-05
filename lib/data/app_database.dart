@@ -450,7 +450,6 @@ class AppDatabase extends ChangeNotifier {
       if (park != null) {
         _detachFromParkStaff(admin, park);
 
-        // Если парк остался без админа — вернуть под рег. админа
         if (parkAdminsOf(removedParkId).isEmpty) {
           for (final reg in regionsOfPark(removedParkId)) {
             for (final ra in regionalAdminsOf(reg.id)) {
@@ -465,68 +464,72 @@ class AppDatabase extends ChangeNotifier {
   }
 
   /// Назначает сотрудника региональным администратором.
-///
-/// Закрывает текущую запись в истории, создаёт новую (regionalAdmin → region),
-/// ставит super как руководителя, чистит старых подчинённых (если был
-/// парковым или рег. админом) и подчиняет:
-/// - операторов и техников парков региона без активного parkAdmin'а;
-/// - parkAdmin'ов региона, у которых руководитель — super или не назначен.
-void assignRegionalAdmin(Employee admin, Region region, {String? reason}) {
-  final now = DateTime.now();
-  final oldParkId = admin.parkId;
-  final oldRegionId = admin.regionId;
+  ///
+  /// Закрывает текущую запись в истории, создаёт новую (regionalAdmin → region),
+  /// ставит super как руководителя, чистит старых подчинённых (если был
+  /// парковым или рег. админом) и подчиняет:
+  /// - операторов и техников парков региона без активного parkAdmin'а;
+  /// - parkAdmin'ов региона, у которых руководитель — super или не назначен.
+  void assignRegionalAdmin(Employee admin, Region region, {String? reason}) {
+    final now = DateTime.now();
+    final oldParkId = admin.parkId;
+    final oldRegionId = admin.regionId;
 
-  _closeCurrentHistory(
-      admin, reason ?? 'Назначен региональным администратором');
+    _closeCurrentHistory(
+        admin, reason ?? 'Назначен региональным администратором');
 
-  if (oldParkId != null) {
-    final oldPark = parkById(oldParkId);
-    if (oldPark != null) _detachFromParkStaff(admin, oldPark);
-  }
-  if (oldRegionId != null && oldRegionId != region.id) {
-    final oldRegion = regionById(oldRegionId);
-    if (oldRegion != null) _detachFromRegionStaff(admin, oldRegion);
-  }
+    if (oldParkId != null) {
+      final oldPark = parkById(oldParkId);
+      if (oldPark != null) _detachFromParkStaff(admin, oldPark);
+    }
+    if (oldRegionId != null && oldRegionId != region.id) {
+      final oldRegion = regionById(oldRegionId);
+      if (oldRegion != null) _detachFromRegionStaff(admin, oldRegion);
+    }
 
-  admin.history.add(RoleHistoryEntry(
-    id: 'h${DateTime.now().microsecondsSinceEpoch}',
-    role: EmployeeRole.regionalAdmin,
-    regionId: region.id,
-    startedAt: now,
-  ));
+    admin.history.add(RoleHistoryEntry(
+      id: 'h${DateTime.now().microsecondsSinceEpoch}',
+      role: EmployeeRole.regionalAdmin,
+      regionId: region.id,
+      startedAt: now,
+    ));
 
-  admin.role = EmployeeRole.regionalAdmin;
-  admin.regionId = region.id;
-  admin.parkId = null;
-  admin.status = EmployeeStatus.active;
-  admin.statusChangedAt = now;
+    admin.role = EmployeeRole.regionalAdmin;
+    admin.regionId = region.id;
+    admin.parkId = null;
+    admin.status = EmployeeStatus.active;
+    admin.statusChangedAt = now;
 
-  final superAdmin = superAdmins.firstWhereOrNull((s) => s.id != admin.id);
-  if (superAdmin != null) admin.managerId = superAdmin.id;
+    final superAdmin = superAdmins.firstWhereOrNull((s) => s.id != admin.id);
+    if (superAdmin != null) admin.managerId = superAdmin.id;
 
-  // Операторы/техники парков региона без активного parkAdmin'а
-  _subordinateOrphanParkStaff(admin, region);
+    // Операторы/техники парков региона без активного parkAdmin'а
+    _subordinateOrphanParkStaff(admin, region);
 
-  // parkAdmin'ы региона, у которых руководитель = super (или не назначен)
-  // — подчинить новому рег.админу
-  final superId = superAdmin?.id;
-  for (final pid in region.parkIds) {
-    for (final pa in parkAdminsOf(pid)) {
-      if (pa.id == admin.id) continue;
-      if (pa.managerId == null || pa.managerId == superId) {
-        pa.managerId = admin.id;
+    // parkAdmin'ы региона, у которых руководитель = super (или не назначен)
+    // — подчинить новому рег.админу
+    final superId = superAdmin?.id;
+    for (final pid in region.parkIds) {
+      for (final pa in parkAdminsOf(pid)) {
+        if (pa.id == admin.id) continue;
+        if (pa.managerId == null || pa.managerId == superId) {
+          pa.managerId = admin.id;
+        }
       }
     }
-  }
 
-  save();
-}
+    save();
+  }
 
   /// Снимает регионального админа с должности.
   ///
   /// Освобождает regionId/parkId, отвязывает его от операторов/техников
-  /// всех парков региона. Роль принудительно ставится `regionalAdmin`,
-  /// чтобы после снятия сотрудник попадал в «Свободные рег. админы».
+  /// всех парков региона и от parkAdmin'ов региона. Роль принудительно
+  /// ставится `regionalAdmin`, чтобы после снятия сотрудник попадал
+  /// в «Свободные рег. админы».
+  ///
+  /// parkAdmin'ы региона переподчиняются другому активному рег.админу
+  /// этого региона (если есть) или super-админу.
   void removeRegionalAdmin(Employee admin, {String? byAdminId}) {
     final now = DateTime.now();
     final removedRegionId = admin.regionId;
@@ -545,7 +548,30 @@ void assignRegionalAdmin(Employee admin, Region region, {String? reason}) {
 
     if (removedRegionId != null) {
       final region = regionById(removedRegionId);
-      if (region != null) _detachFromRegionStaff(admin, region);
+      if (region != null) {
+        // Операторы/техники парков региона
+        _detachFromRegionStaff(admin, region);
+
+        // Найти замену для parkAdmin'ов:
+        // другой активный рег.админ этого же региона, иначе super
+        final replacementRegAdmin = regionalAdminsOf(region.id)
+            .firstWhereOrNull((x) => x.id != admin.id);
+        final replacementSuper = superAdmins
+            .firstWhereOrNull((x) => x.id != admin.id);
+        final replacementId =
+            replacementRegAdmin?.id ?? replacementSuper?.id;
+
+        // parkAdmin'ы региона — отвязать от снятого и переподчинить
+        for (final pid in region.parkIds) {
+          for (final pa in parkAdminsOf(pid)) {
+            if (pa.id == admin.id) continue;
+            if (pa.managerId == admin.id) {
+              pa.managerId = replacementId;
+            }
+            pa.additionalManagerIds.remove(admin.id);
+          }
+        }
+      }
     }
 
     save();
@@ -579,11 +605,6 @@ void assignRegionalAdmin(Employee admin, Region region, {String? reason}) {
     }
   }
 
-  /// Подчиняет операторов и техников парка админу.
-  ///
-  /// Заодно снимает с них рег. админов региона как руководителей —
-  /// если у парка появился свой админ, операторы отчитываются ему,
-  /// а не рег. админу. Рег. админ остаётся руководителем самого админа.
   void _subordinateParkStaffTo(Employee admin, Park park) {
     bool needsAdditional(Employee e) {
       if (e.managerId == null) return false;
@@ -613,63 +634,32 @@ void assignRegionalAdmin(Employee admin, Region region, {String? reason}) {
       }
     }
 
-    /// Снимает регионального админа с должности.
-///
-/// Освобождает regionId/parkId, отвязывает его от операторов/техников
-/// всех парков региона и от parkAdmin'ов региона. Роль принудительно
-/// ставится `regionalAdmin`, чтобы после снятия сотрудник попадал
-/// в «Свободные рег. админы».
-///
-/// parkAdmin'ы региона переподчиняются другому активному рег.админу
-/// этого региона (если есть) или super-админу.
-void removeRegionalAdmin(Employee admin, {String? byAdminId}) {
-  final now = DateTime.now();
-  final removedRegionId = admin.regionId;
+    void removeRegionAdmins(Employee e) {
+      for (final id in regionAdminIds) {
+        if (e.managerId == id) e.managerId = null;
+        e.additionalManagerIds.remove(id);
+      }
+    }
 
-  _closeCurrentHistory(admin, 'Снят с должности');
-
-  admin.role = EmployeeRole.regionalAdmin;
-  admin.regionId = null;
-  admin.parkId = null;
-  admin.status = EmployeeStatus.active;
-  admin.statusChangedAt = now;
-
-  if (byAdminId != null) {
-    admin.managerId = byAdminId;
-  }
-
-  if (removedRegionId != null) {
-    final region = regionById(removedRegionId);
-    if (region != null) {
-      // Операторы/техники парков региона
-      _detachFromRegionStaff(admin, region);
-
-      // Найти замену для parkAdmin'ов:
-      // другой активный рег.админ этого же региона, иначе super
-      final replacementRegAdmin = regionalAdminsOf(region.id)
-          .firstWhereOrNull((x) => x.id != admin.id);
-      final replacementSuper = superAdmins
-          .firstWhereOrNull((x) => x.id != admin.id);
-      final replacementId =
-          replacementRegAdmin?.id ?? replacementSuper?.id;
-
-      // parkAdmin'ы региона — отвязать от снятого и переподчинить
-      for (final pid in region.parkIds) {
-        for (final pa in parkAdminsOf(pid)) {
-          if (pa.id == admin.id) continue;
-          if (pa.managerId == admin.id) {
-            pa.managerId = replacementId;
-          }
-          pa.additionalManagerIds.remove(admin.id);
+    for (final link in operatorLinks) {
+      if (link.parkId == park.id && link.status == LinkStatus.approved) {
+        final op = employeeById(link.operatorId);
+        if (op != null && op.status != EmployeeStatus.fired) {
+          removeRegionAdmins(op);
+          addManager(op);
         }
+      }
+    }
+
+    for (final e in employees) {
+      if (e.status == EmployeeStatus.fired) continue;
+      if (e.hasRole(EmployeeRole.technician) && e.parkId == park.id) {
+        removeRegionAdmins(e);
+        addManager(e);
       }
     }
   }
 
-  save();
-}
-
-    
   void _subordinateOrphanParkStaff(Employee admin, Region region) {
     bool needsAdditional(Employee e) {
       if (e.managerId == null) return false;
@@ -747,85 +737,85 @@ void removeRegionalAdmin(Employee admin, {String? byAdminId}) {
     return true;
   }
 
- /// Меняет роли сотрудника (основную + дополнительные), ведёт историю.
-///
-/// При понижении с parkAdmin — отвязывает операторов/техников парка.
-/// При понижении с regionalAdmin — отвязывает операторов/техников региона.
-/// При повышении до parkAdmin с уже известным parkId — подчиняет парк.
-void setRoles(Employee e, EmployeeRole primary, List<EmployeeRole> extras) {
-  final now = DateTime.now();
-  final oldPrimary = e.role;
-  final oldExtras = List<EmployeeRole>.from(e.additionalRoles);
+  /// Меняет роли сотрудника (основную + дополнительные), ведёт историю.
+  ///
+  /// При понижении с parkAdmin — отвязывает операторов/техников парка.
+  /// При понижении с regionalAdmin — отвязывает операторов/техников региона.
+  /// При повышении до parkAdmin с уже известным parkId — подчиняет парк.
+  void setRoles(Employee e, EmployeeRole primary, List<EmployeeRole> extras) {
+    final now = DateTime.now();
+    final oldPrimary = e.role;
+    final oldExtras = List<EmployeeRole>.from(e.additionalRoles);
 
-  if (oldPrimary != primary) {
-    _closeCurrentHistory(
-        e, 'Смена основной роли: ${oldPrimary.label} → ${primary.label}');
-    e.history.add(RoleHistoryEntry(
-      id: 'h${DateTime.now().microsecondsSinceEpoch}',
-      role: primary,
-      parkId: e.parkId,
-      regionId: e.regionId,
-      startedAt: now,
-    ));
-  }
-
-  e.role = primary;
-  e.additionalRoles = List.from(extras);
-
-  for (final r in extras) {
-    if (!oldExtras.contains(r)) {
+    if (oldPrimary != primary) {
+      _closeCurrentHistory(
+          e, 'Смена основной роли: ${oldPrimary.label} → ${primary.label}');
       e.history.add(RoleHistoryEntry(
-        id: 'h${DateTime.now().microsecondsSinceEpoch}_${r.name}',
-        role: r,
+        id: 'h${DateTime.now().microsecondsSinceEpoch}',
+        role: primary,
         parkId: e.parkId,
         regionId: e.regionId,
         startedAt: now,
-        reason: 'Добавлена дополнительная роль',
       ));
     }
-  }
 
-  for (final r in oldExtras) {
-    if (!extras.contains(r) && r != primary) {
-      for (final h in e.history) {
-        if (h.isCurrent && h.role == r) {
-          h.endedAt = now;
-          h.reason = 'Снята дополнительная роль';
+    e.role = primary;
+    e.additionalRoles = List.from(extras);
+
+    for (final r in extras) {
+      if (!oldExtras.contains(r)) {
+        e.history.add(RoleHistoryEntry(
+          id: 'h${DateTime.now().microsecondsSinceEpoch}_${r.name}',
+          role: r,
+          parkId: e.parkId,
+          regionId: e.regionId,
+          startedAt: now,
+          reason: 'Добавлена дополнительная роль',
+        ));
+      }
+    }
+
+    for (final r in oldExtras) {
+      if (!extras.contains(r) && r != primary) {
+        for (final h in e.history) {
+          if (h.isCurrent && h.role == r) {
+            h.endedAt = now;
+            h.reason = 'Снята дополнительная роль';
+          }
         }
       }
     }
-  }
 
-  // Понижение с parkAdmin — отвязываем парк и подчинённых
-  if (oldPrimary == EmployeeRole.parkAdmin &&
-      primary != EmployeeRole.parkAdmin) {
-    final oldParkId = e.parkId;
-    if (oldParkId != null) {
-      final oldPark = parkById(oldParkId);
-      if (oldPark != null) _detachFromParkStaff(e, oldPark);
-      e.parkId = null;
+    // Понижение с parkAdmin — отвязываем парк и подчинённых
+    if (oldPrimary == EmployeeRole.parkAdmin &&
+        primary != EmployeeRole.parkAdmin) {
+      final oldParkId = e.parkId;
+      if (oldParkId != null) {
+        final oldPark = parkById(oldParkId);
+        if (oldPark != null) _detachFromParkStaff(e, oldPark);
+        e.parkId = null;
+      }
     }
-  }
 
-  // Понижение с regionalAdmin — отвязываем регион и подчинённых
-  if (oldPrimary == EmployeeRole.regionalAdmin &&
-      primary != EmployeeRole.regionalAdmin) {
-    final oldRegionId = e.regionId;
-    if (oldRegionId != null) {
-      final oldRegion = regionById(oldRegionId);
-      if (oldRegion != null) _detachFromRegionStaff(e, oldRegion);
-      e.regionId = null;
+    // Понижение с regionalAdmin — отвязываем регион и подчинённых
+    if (oldPrimary == EmployeeRole.regionalAdmin &&
+        primary != EmployeeRole.regionalAdmin) {
+      final oldRegionId = e.regionId;
+      if (oldRegionId != null) {
+        final oldRegion = regionById(oldRegionId);
+        if (oldRegion != null) _detachFromRegionStaff(e, oldRegion);
+        e.regionId = null;
+      }
     }
-  }
 
-  // Стал parkAdmin с известным parkId — подчинить парк
-  if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
-    final park = parkById(e.parkId!);
-    if (park != null) _subordinateParkStaffTo(e, park);
-  }
+    // Стал parkAdmin с известным parkId — подчинить парк
+    if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
+      final park = parkById(e.parkId!);
+      if (park != null) _subordinateParkStaffTo(e, park);
+    }
 
-  save();
-}
+    save();
+  }
 
   /// Переводит сотрудника в парк.
   ///
@@ -880,7 +870,6 @@ void setRoles(Employee e, EmployeeRole primary, List<EmployeeRole> extras) {
       if (loc != null) e.lastCityId = loc.cityId;
 
       if (wasParkAdmin) {
-        // Отвязать от старого парка (если переезжает)
         if (oldParkId != null && oldParkId != parkId) {
           final oldPark = parkById(oldParkId);
           if (oldPark != null) {
@@ -895,7 +884,6 @@ void setRoles(Employee e, EmployeeRole primary, List<EmployeeRole> extras) {
           }
         }
 
-        // Назначить в новый парк
         e.parkId = parkId;
         _autoAssignManager(e, park);
         _subordinateParkStaffTo(e, park);
