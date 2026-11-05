@@ -1325,7 +1325,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
         ),
       ),
       if (canManage) ...[
-        if (!e.role.canBeAdmin)
+        if (e.role != EmployeeRole.superAdmin)
           IconButton(
             icon: const Icon(Icons.manage_accounts, size: 18),
             tooltip: 'Управлять ролями',
@@ -1679,7 +1679,7 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           color: AppColors.cyn,
           onTap: () => _changeWorkplace(e, setS),
         ),
-      if (!e.role.canBeAdmin && e.id != me.id)
+      if (e.role != EmployeeRole.superAdmin && e.id != me.id)
         _actionBtn(
           icon: Icons.manage_accounts,
           label: 'Роли',
@@ -1743,29 +1743,35 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   // ═══════════ управление ролями (вынесенный виджет) ═══════════
 
   Future<void> _manageRoles(Employee e, StateSetter setS) async {
-    if (e.role.canBeAdmin) {
-      await showDialog<void>(
-        context: context,
-        useRootNavigator: true,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: const Text('Роли'),
-          content: Text(
-            'Для административных ролей управление дополнительными ролями '
-            'выполняется в карточке администратора на вкладке «Администраторы».'
-            '\n\nТекущая роль: ${e.role.label}',
-            style: const TextStyle(fontSize: 13, color: AppColors.mut),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Закрыть')),
-          ],
-        ),
-      );
+    if (e.role == EmployeeRole.superAdmin) {
+      _snack('Super-админ — основная роль не меняется');
       return;
     }
 
+    if (e.role.canBeAdmin) {
+      // parkAdmin / regionalAdmin: основную роль меняем только через
+      // «Перевести» или «Снять с должности». Здесь — только доп. роли.
+      final result = await showRoleManagementDialog(
+        context: context,
+        employee: e,
+        selectableRoles: const [
+          EmployeeRole.parkAdmin,
+          EmployeeRole.regionalAdmin,
+        ],
+        selectableExtras: const [
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+        canChangePrimary: false,
+      );
+      if (result == null) return;
+      db.setRoles(e, result.primary, result.extras);
+      setS(() {});
+      _snack('Роли обновлены');
+      return;
+    }
+
+    // operator / technician: можно менять основную роль и доп. роли
     final result = await showRoleManagementDialog(
       context: context,
       employee: e,
