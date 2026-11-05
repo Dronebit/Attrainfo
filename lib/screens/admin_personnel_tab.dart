@@ -85,7 +85,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
   List<Employee> _filteredAll() {
     final q = _query.toLowerCase().trim();
-    final visibleRegionIds = _visibleRegions.map((r) => r.id).toSet();
 
     return db.employees.where((e) {
       if (_section == 'operators') {
@@ -101,36 +100,20 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
       if (_filterRole != null && !e.hasRole(_filterRole!)) return false;
 
-      if (me.role != EmployeeRole.superAdmin) {
-        final inMyRegion = (e.regionId != null &&
-                visibleRegionIds.contains(e.regionId)) ||
-            (e.parkId != null &&
-                db.regionsOfPark(e.parkId!).any(
-                    (r) => visibleRegionIds.contains(r.id))) ||
-            (e.hasRole(EmployeeRole.operator) &&
-                _approvedParkIds(e).any((pid) => db
-                    .regionsOfPark(pid)
-                    .any((r) => visibleRegionIds.contains(r.id))));
-        if (!inMyRegion) return false;
+      // Фильтр по региону (с учетом города и истории)
+      if (me.role == EmployeeRole.regionalAdmin && me.regionId != null) {
+        if (!db.isEmployeeInRegion(e, me.regionId!)) return false;
       }
 
       if (_filterStatus != null && e.status != _filterStatus) return false;
 
       if (_filterRegionId != null) {
-        final region = db.regionById(_filterRegionId);
-        if (region == null) return false;
-        final inRegion = (e.regionId == _filterRegionId) ||
-            (e.parkId != null && region.parkIds.contains(e.parkId!)) ||
-            (e.hasRole(EmployeeRole.operator) &&
-                _approvedParkIds(e)
-                    .any((pid) => region.parkIds.contains(pid)));
-        if (!inRegion) return false;
+        if (!db.isEmployeeInRegion(e, _filterRegionId!)) return false;
       }
 
       if (_filterCityId != null) {
-        final city = db.cityById(_filterCityId);
-        if (city == null) return false;
-        if (!_employeeInCity(e, city.id)) return false;
+        // Если у сотрудника указан город, и он не совпадает — отсеиваем
+        if (e.cityId != null && e.cityId != _filterCityId) return false;
       }
 
       if (q.isNotEmpty) {
@@ -140,29 +123,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
 
       return true;
     }).toList();
-  }
-
-  bool _employeeInCity(Employee e, String cityId) {
-    if (e.role == EmployeeRole.regionalAdmin && e.regionId != null) {
-      final cities = db.citiesOfRegion(e.regionId!);
-      return cities.any((c) => c.id == cityId);
-    }
-    if (e.parkId != null) {
-      final park = db.parkById(e.parkId);
-      if (park == null) return false;
-      final loc = db.locById(park.locId);
-      return loc?.cityId == cityId;
-    }
-    if (e.hasRole(EmployeeRole.operator)) {
-      for (final pid in _approvedParkIds(e)) {
-        final park = db.parkById(pid);
-        if (park == null) continue;
-        final loc = db.locById(park.locId);
-        if (loc?.cityId == cityId) return true;
-      }
-    }
-    if (e.lastCityId != null) return e.lastCityId == cityId;
-    return false;
   }
 
   List<String> _approvedParkIds(Employee e) {
@@ -1476,12 +1436,21 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
           label: 'Парки',
           value: parkNames.isEmpty ? 'Свободен' : parkNames,
         ),
-        if (e.regionId != null)
+        
+        // Отображение города и региона
+        if (e.cityId != null && db.cityById(e.cityId) != null)
+          _infoLine(
+            icon: Icons.location_city,
+            label: 'Город',
+            value: db.cityById(e.cityId)!.name,
+          ),
+        if (e.regionId != null && db.regionById(e.regionId) != null)
           _infoLine(
             icon: Icons.map_outlined,
             label: 'Регион',
-            value: db.regionById(e.regionId)?.name ?? '—',
+            value: db.regionById(e.regionId)!.name,
           ),
+
         if (e.role != EmployeeRole.superAdmin)
           _infoLine(
             icon: Icons.supervisor_account,
@@ -1771,20 +1740,19 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   // ═══════════ управление ролями ═══════════
 
   Future<void> _manageRoles(Employee e, StateSetter setS) async {
-  final changed = await showAndSaveRoles(
-    context: context,
-    db: db,
-    currentUser: me,
-    targetEmployee: e,
-  );
-  
-  if (!changed) return;
-  
-  setS(() {});
-  _snackAfterRoles(e);
-}
+    final changed = await showAndSaveRoles(
+      context: context,
+      db: db,
+      currentUser: me,
+      targetEmployee: e,
+    );
 
-  
+    if (!changed) return;
+
+    setS(() {});
+    _snackAfterRoles(e);
+  }
+
   void _snackAfterRoles(Employee e) {
     if (e.role == EmployeeRole.parkAdmin) {
       final park = e.parkId == null ? null : db.parkById(e.parkId);
@@ -2008,7 +1976,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     );
     if (ok != true) return;
 
-    // Запоминаем — был ли руководитель до отвязки
     final hadManager =
         e.managerId != null || e.additionalManagerIds.isNotEmpty;
     final managersBefore = hadManager ? db.managersOf(e) : <Employee>[];
