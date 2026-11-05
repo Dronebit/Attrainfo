@@ -14,6 +14,14 @@ extension EmployeeRoleX on EmployeeRole {
         EmployeeRole.operator: 'Оператор',
         EmployeeRole.technician: 'Механик',
       }[this]!;
+String get fullLabel => const {
+      EmployeeRole.superAdmin: 'Super администратор',
+      EmployeeRole.regionalAdmin: 'Региональный администратор',
+      EmployeeRole.parkAdmin: 'Администратор парка',
+      EmployeeRole.operator: 'Оператор',
+      EmployeeRole.technician: 'Механик',
+    }[this]!;
+  
 
   int get colorValue => const {
         EmployeeRole.superAdmin: 0xFFA78BFA,
