@@ -862,25 +862,29 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   }
 
   Future<void> _manageRoles(Employee admin, StateSetter setS) async {
-    final result = await showRoleManagementDialog(
-      context: context,
-      employee: admin,
-      selectableRoles: const [
-        EmployeeRole.parkAdmin,
-        EmployeeRole.regionalAdmin,
-      ],
-      selectableExtras: const [
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-      ],
-      canChangePrimary: false,
-    );
-    if (result == null) return;
-    db.setRoles(admin, result.primary, result.extras);
-    setS(() {});
-    setState(() {});
-    _snack('Роли обновлены');
-  }
+  // SuperAdmin (владелец) может менять основную роль.
+  // RegionalAdmin — только дополнительные.
+  final isOwner = me.role == EmployeeRole.superAdmin;
+
+  final result = await showRoleManagementDialog(
+    context: context,
+    employee: admin,
+    selectableRoles: const [
+      EmployeeRole.parkAdmin,
+      EmployeeRole.regionalAdmin,
+    ],
+    selectableExtras: const [
+      EmployeeRole.operator,
+      EmployeeRole.technician,
+    ],
+    canChangePrimary: isOwner,
+  );
+  if (result == null) return;
+  db.setRoles(admin, result.primary, result.extras);
+  setS(() {});
+  setState(() {});
+  _snack('Роли обновлены');
+}
 
   Widget _infoLine(String label, String value,
       {bool mono = false, Color? color}) {
