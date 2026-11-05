@@ -872,18 +872,19 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
     setState(() {});
   }
 
-Future<void> _manageRoles(Employee e, StateSetter setS) async {
+Future<void> _manageRoles(Employee admin, StateSetter setS) async {
   final changed = await showAndSaveRoles(
     context: context,
     db: db,
     currentUser: me,
-    targetEmployee: e,
+    targetEmployee: admin,
   );
   
   if (!changed) return;
   
   setS(() {});
-  _snackAfterRoles(e);
+  setState(() {});
+  _snack('Роли обновлены');
 }
 
 
