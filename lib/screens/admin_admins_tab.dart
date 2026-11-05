@@ -23,6 +23,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   final Set<String> _collapsedRegions = {};
   final Set<String> _collapsedParks = {};
   bool _superCollapsed = false;
+  bool _freeCollapsed = false;
 
   String _uid() => 'x${DateTime.now().microsecondsSinceEpoch}';
 
@@ -39,6 +40,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
         if (me.role == EmployeeRole.superAdmin) ..._superSection(),
         ..._regionsSection(),
         if (me.role == EmployeeRole.superAdmin) _unassignedParksSection(),
+        if (me.role == EmployeeRole.superAdmin) _freeAdminsSection(),
       ],
     );
   }
@@ -291,7 +293,9 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                           style: const TextStyle(
                               fontSize: 12, fontWeight: FontWeight.w600)),
                       Text(
-                        admins.isEmpty ? 'нет админа' : 'админов: ${admins.length}',
+                        admins.isEmpty
+                            ? 'нет админа'
+                            : 'админов: ${admins.length}',
                         style: TextStyle(
                           fontSize: 9.5,
                           color:
@@ -357,6 +361,75 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                 children: unassigned.map((p) => _parkNode(p)).toList(),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ═══════════ Свободные админы ═══════════
+
+  Widget _freeAdminsSection() {
+    final free = db.employees.where((a) {
+      if (a.status != EmployeeStatus.active) return false;
+      if (a.role != EmployeeRole.regionalAdmin &&
+          a.role != EmployeeRole.parkAdmin) {
+        return false;
+      }
+      return a.regionId == null && a.parkId == null;
+    }).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+    if (free.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.panel,
+          border: Border.all(color: AppColors.line),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: () =>
+                  setState(() => _freeCollapsed = !_freeCollapsed),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Row(children: [
+                  Icon(
+                      _freeCollapsed
+                          ? Icons.chevron_right
+                          : Icons.expand_more,
+                      size: 16,
+                      color: AppColors.mut),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.person_off,
+                      size: 13, color: AppColors.org),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text('Свободные админы',
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                  _countBadge(free.length),
+                ]),
+              ),
+            ),
+            if (!_freeCollapsed) ...[
+              const Divider(height: 1, color: AppColors.line),
+              Padding(
+                padding: const EdgeInsets.all(6),
+                child: Column(
+                  children: free.map((a) => _adminRow(a)).toList(),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -505,6 +578,9 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                         color: Color(current.status.colorValue)),
                     if (region != null) _infoLine('Регион', region.name),
                     if (park != null) _infoLine('Парк', park.name),
+                    if (region == null && park == null && !isSuper)
+                      _infoLine('Место работы', 'Свободен',
+                          color: AppColors.org),
                     const SizedBox(height: 14),
                     if (!isSuper && !isFired) ...[
                       if (isPark) ...[
@@ -524,10 +600,12 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                         const SizedBox(height: 6),
                         OutlinedButton.icon(
                           onPressed: () async {
-                            final ok = await _confirm(
+                            final ok = await _confirmAction(
                               'Снять с должности?',
                               '${current.name} перестанет быть админом парка, '
                                   'останется в системе как «свободный админ».',
+                              confirmLabel: 'Снять',
+                              confirmColor: AppColors.amb,
                             );
                             if (ok != true) return;
                             if (!ctx.mounted) return;
@@ -562,10 +640,12 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                         const SizedBox(height: 6),
                         OutlinedButton.icon(
                           onPressed: () async {
-                            final ok = await _confirm(
+                            final ok = await _confirmAction(
                               'Снять с должности?',
                               '${current.name} перестанет быть рег. админом. '
                                   'Старые подчинённые будут отвязаны.',
+                              confirmLabel: 'Снять',
+                              confirmColor: AppColors.amb,
                             );
                             if (ok != true) return;
                             if (!ctx.mounted) return;
@@ -585,9 +665,11 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                       const SizedBox(height: 6),
                       OutlinedButton.icon(
                         onPressed: () async {
-                          final ok = await _confirm(
+                          final ok = await _confirmAction(
                             'Уволить?',
                             '${current.name} будет уволен. История сохранится.',
+                            confirmLabel: 'Уволить',
+                            confirmColor: AppColors.red,
                           );
                           if (ok != true) return;
                           if (!ctx.mounted) return;
@@ -626,7 +708,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(children: [
         SizedBox(
-          width: 90,
+          width: 110,
           child: Text(label,
               style:
                   const TextStyle(fontSize: 11.5, color: AppColors.dim)),
@@ -710,9 +792,8 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
 
   Future<void> _changeRegion(Employee admin) async {
     final currentRegionId = admin.regionId;
-    final available = db.regions
-        .where((r) => r.id != currentRegionId)
-        .toList();
+    final available =
+        db.regions.where((r) => r.id != currentRegionId).toList();
     if (available.isEmpty) {
       _snack('Нет других регионов');
       return;
@@ -763,21 +844,27 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
     _snack('Переведён в ${region.name}');
   }
 
-  // ═══════════ Назначение существующего админа ═══════════
+  // ═══════════ Назначение: регион ═══════════
 
   Future<void> _pickAdminForRegion(Region region) async {
-    final candidates = db.employees.where((a) {
+    // Кандидаты: parkAdmin или regionalAdmin, active, не в этом регионе.
+    final all = db.employees.where((a) {
       if (a.status != EmployeeStatus.active) return false;
       if (a.role != EmployeeRole.regionalAdmin &&
           a.role != EmployeeRole.parkAdmin) {
         return false;
       }
-      if (a.role == EmployeeRole.regionalAdmin &&
-          a.regionId == region.id) {
-        return false;
-      }
+      if (a.regionId == region.id) return false;
       return true;
-    }).toList()
+    }).toList();
+
+    final free = all
+        .where((a) => a.regionId == null && a.parkId == null)
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final busy = all
+        .where((a) => a.regionId != null || a.parkId != null)
+        .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
     await showDialog<void>(
@@ -785,69 +872,64 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.panel,
-        title: Text('В регион · ${region.name}'),
+        title: Text('Рег. админ · ${region.name}'),
         content: SizedBox(
-          width: 440,
+          width: 460,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (candidates.isEmpty)
+                if (free.isEmpty && busy.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Text('Нет свободных админов',
+                    child: Text(
+                        'Нет доступных админов. Создайте нового.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             fontSize: 12, color: AppColors.dim)),
-                  )
-                else
-                  ...candidates.map((a) {
-                    final curRegion = a.regionId == null
-                        ? null
-                        : db.regionById(a.regionId);
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.panel2,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(children: [
-                        Expanded(
-                          child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                Text('${a.name} · PIN ${a.pin}',
-                                    style: const TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600)),
-                                Text(
-                                  curRegion == null
-                                      ? 'Свободен · ${a.role.label}'
-                                      : 'В регионе: ${curRegion.name}',
-                                  style: const TextStyle(
-                                      fontSize: 10.5,
-                                      color: AppColors.dim),
-                                ),
-                              ]),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            db.assignRegionalAdmin(a, region,
-                                reason: 'Назначен из списка');
-                            Navigator.pop(ctx);
-                            setState(() {});
-                            _snack('Назначен: ${a.name}');
-                          },
-                          child: const Text('Выбрать',
-                              style: TextStyle(fontSize: 12)),
-                        ),
-                      ]),
-                    );
-                  }),
-                const SizedBox(height: 10),
+                  ),
+                if (free.isNotEmpty) ...[
+                  const _SectionLabel('СВОБОДНЫЕ'),
+                  ...free.map((a) => _candidateTile(
+                        a,
+                        subtitle:
+                            'Свободен · ${a.role.label}',
+                        onTap: () async {
+                          db.assignRegionalAdmin(a, region,
+                              reason: 'Назначен из списка');
+                          Navigator.pop(ctx);
+                          setState(() {});
+                          _snack('Назначен: ${a.name}');
+                        },
+                      )),
+                  const SizedBox(height: 10),
+                ],
+                if (busy.isNotEmpty) ...[
+                  const _SectionLabel('ЗАНЯТЫЕ'),
+                  ...busy.map((a) => _candidateTile(
+                        a,
+                        subtitle: _busySubtitle(a),
+                        warning: true,
+                        onTap: () async {
+                          final ok = await _confirmAction(
+                            'Перевести?',
+                            '${a.name} сейчас ${_busySubtitle(a)}. '
+                                'Перевести в регион «${region.name}»?',
+                            confirmLabel: 'Перевести',
+                            confirmColor: AppColors.amb,
+                          );
+                          if (ok != true) return;
+                          if (!ctx.mounted) return;
+                          db.assignRegionalAdmin(a, region,
+                              reason: 'Переведён в регион');
+                          Navigator.pop(ctx);
+                          setState(() {});
+                          _snack('Назначен: ${a.name}');
+                        },
+                      )),
+                  const SizedBox(height: 10),
+                ],
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
                       backgroundColor: AppColors.amb,
@@ -873,13 +955,24 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
     setState(() {});
   }
 
+  // ═══════════ Назначение: парк ═══════════
+
   Future<void> _pickAdminForPark(Park park) async {
-    final candidates = db.employees.where((a) {
+    // Кандидаты: parkAdmin или regionalAdmin (если без парка), active,
+    // не в этом парке.
+    final all = db.employees.where((a) {
       if (a.status != EmployeeStatus.active) return false;
-      if (a.role != EmployeeRole.parkAdmin) return false;
+      if (a.role != EmployeeRole.parkAdmin &&
+          a.role != EmployeeRole.regionalAdmin) {
+        return false;
+      }
       if (a.parkId == park.id) return false;
       return true;
-    }).toList()
+    }).toList();
+
+    final free = all.where((a) => a.parkId == null).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final busy = all.where((a) => a.parkId != null).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
     await showDialog<void>(
@@ -889,68 +982,63 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
         backgroundColor: AppColors.panel,
         title: Text('Админ парка · ${park.name}'),
         content: SizedBox(
-          width: 440,
+          width: 460,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (candidates.isEmpty)
+                if (free.isEmpty && busy.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Text('Нет свободных админов парков',
+                    child: Text(
+                        'Нет доступных админов. Создайте нового.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             fontSize: 12, color: AppColors.dim)),
-                  )
-                else
-                  ...candidates.map((a) {
-                    final curPark =
-                        a.parkId == null ? null : db.parkById(a.parkId);
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.panel2,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(children: [
-                        Expanded(
-                          child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                Text('${a.name} · PIN ${a.pin}',
-                                    style: const TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600)),
-                                Text(
-                                  curPark == null
-                                      ? 'Свободен'
-                                      : 'Сейчас: ${curPark.name}',
-                                  style: const TextStyle(
-                                      fontSize: 10.5,
-                                      color: AppColors.dim),
-                                ),
-                              ]),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            db.assignAdminToPark(a, park,
-                                reason: a.parkId != null
-                                    ? 'Переведён из другого парка'
-                                    : 'Назначен администратором');
-                            Navigator.pop(ctx);
-                            setState(() {});
-                            _snack('Назначен: ${a.name}');
-                          },
-                          child: const Text('Выбрать',
-                              style: TextStyle(fontSize: 12)),
-                        ),
-                      ]),
-                    );
-                  }),
-                const SizedBox(height: 10),
+                  ),
+                if (free.isNotEmpty) ...[
+                  const _SectionLabel('СВОБОДНЫЕ'),
+                  ...free.map((a) => _candidateTile(
+                        a,
+                        subtitle: a.role == EmployeeRole.regionalAdmin
+                            ? 'Свободен · рег. админ → станет админом парка'
+                            : 'Свободен',
+                        onTap: () async {
+                          db.assignAdminToPark(a, park,
+                              reason: 'Назначен из списка');
+                          Navigator.pop(ctx);
+                          setState(() {});
+                          _snack('Назначен: ${a.name}');
+                        },
+                      )),
+                  const SizedBox(height: 10),
+                ],
+                if (busy.isNotEmpty) ...[
+                  const _SectionLabel('ЗАНЯТЫЕ'),
+                  ...busy.map((a) => _candidateTile(
+                        a,
+                        subtitle: _busySubtitle(a),
+                        warning: true,
+                        onTap: () async {
+                          final ok = await _confirmAction(
+                            'Перевести?',
+                            '${a.name} сейчас ${_busySubtitle(a)}. '
+                                'Перевести в парк «${park.name}»?',
+                            confirmLabel: 'Перевести',
+                            confirmColor: AppColors.amb,
+                          );
+                          if (ok != true) return;
+                          if (!ctx.mounted) return;
+                          db.assignAdminToPark(a, park,
+                              reason: 'Переведён в парк');
+                          Navigator.pop(ctx);
+                          setState(() {});
+                          _snack('Назначен: ${a.name}');
+                        },
+                      )),
+                  const SizedBox(height: 10),
+                ],
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
                       backgroundColor: AppColors.amb,
@@ -974,6 +1062,58 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       ),
     );
     setState(() {});
+  }
+
+  Widget _candidateTile(
+    Employee a, {
+    required String subtitle,
+    required Future<void> Function() onTap,
+    bool warning = false,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.panel2,
+        borderRadius: BorderRadius.circular(8),
+        border: warning
+            ? Border.all(color: AppColors.amb.withValues(alpha: 0.3))
+            : null,
+      ),
+      child: Row(children: [
+        Expanded(
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${a.name} · PIN ${a.pin}',
+                    style: const TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w600)),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      color: warning ? AppColors.amb : AppColors.dim),
+                ),
+              ]),
+        ),
+        TextButton(
+          onPressed: onTap,
+          child: const Text('Выбрать', style: TextStyle(fontSize: 12)),
+        ),
+      ]),
+    );
+  }
+
+  String _busySubtitle(Employee a) {
+    if (a.parkId != null) {
+      final p = db.parkById(a.parkId);
+      return 'админ парка «${p?.name ?? "—"}»';
+    }
+    if (a.regionId != null) {
+      final r = db.regionById(a.regionId);
+      return 'рег. админ «${r?.name ?? "—"}»';
+    }
+    return 'свободен';
   }
 
   // ═══════════ Создание новых ═══════════
@@ -1193,7 +1333,12 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
 
   // ═══════════ helpers ═══════════
 
-  Future<bool?> _confirm(String title, String text) async {
+  Future<bool?> _confirmAction(
+    String title,
+    String text, {
+    String confirmLabel = 'OK',
+    Color confirmColor = AppColors.red,
+  }) async {
     return showDialog<bool>(
       context: context,
       useRootNavigator: true,
@@ -1208,9 +1353,15 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Отмена')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            style: FilledButton.styleFrom(
+              backgroundColor: confirmColor,
+              foregroundColor:
+                  confirmColor == AppColors.red
+                      ? Colors.white
+                      : const Color(0xFF1C1204),
+            ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('OK'),
+            child: Text(confirmLabel),
           ),
         ],
       ),
@@ -1265,3 +1416,20 @@ final _cardDeco = BoxDecoration(
   border: Border.all(color: AppColors.line),
   borderRadius: BorderRadius.circular(14),
 );
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Text(text,
+          style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: AppColors.dim,
+              letterSpacing: 0.6)),
+    );
+  }
+}
