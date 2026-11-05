@@ -11,6 +11,7 @@ import '../models/operator_park_link.dart';
 import '../models/shift_vacancy.dart';
 import '../theme.dart';
 import '../widgets/role_management_dialog.dart';
+import '../widgets/workplace_change_dialog.dart';
 
 class AdminPersonnelTab extends StatefulWidget {
   final AppDatabase db;
@@ -1749,8 +1750,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     }
 
     if (e.role.canBeAdmin) {
-      // parkAdmin / regionalAdmin: основную роль меняем только через
-      // «Перевести» или «Снять с должности». Здесь — только доп. роли.
       final result = await showRoleManagementDialog(
         context: context,
         employee: e,
@@ -1771,7 +1770,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       return;
     }
 
-    // operator / technician: можно менять основную роль и доп. роли
     final result = await showRoleManagementDialog(
       context: context,
       employee: e,
@@ -2017,171 +2015,36 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
       return;
     }
 
-    if (db.parks.isEmpty) {
-      _snack('В базе нет парков');
-      return;
-    }
-
-    final cities = List<City>.from(db.cities)
-      ..sort((a, b) => a.name.compareTo(b.name));
-    if (cities.isEmpty) {
-      _snack('В базе нет городов');
-      return;
-    }
+    final result = await showWorkplaceChangeDialog(
+      context: context,
+      db: db,
+      employee: e,
+      type: WorkplaceChangeType.park,
+    );
+    if (result == null || result.parkId == null) return;
 
     final currentParkIds = _approvedParkIds(e);
-    String? initialCityId;
-    if (currentParkIds.isNotEmpty) {
-      final p = db.parkById(currentParkIds.first);
-      if (p != null) {
-        final l = db.locById(p.locId);
-        initialCityId = l?.cityId;
-      }
-    } else if (e.lastCityId != null) {
-      initialCityId = e.lastCityId;
-    }
-
-    String? cityId = initialCityId ?? cities.first.id;
-    String? parkId = currentParkIds.isNotEmpty ? currentParkIds.first : null;
-
-    final result = await showDialog<String>(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS2) {
-          final locs =
-              db.locations.where((l) => l.cityId == cityId).toList();
-          final parks = <Park>[];
-          for (final l in locs) {
-            parks.addAll(db.parks.where((p) => p.locId == l.id));
-          }
-          if (parkId != null && !parks.any((p) => p.id == parkId)) {
-            parkId = parks.isEmpty ? null : parks.first.id;
-          }
-
-          return AlertDialog(
-            backgroundColor: AppColors.panel,
-            title: Text('Сменить место · ${e.name}'),
-            content: SizedBox(
-              width: 440,
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: cityId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Город'),
-                    items: [
-                      for (final c in cities)
-                        DropdownMenuItem(value: c.id, child: Text(c.name)),
-                    ],
-                    onChanged: (v) => setS2(() {
-                      cityId = v;
-                      parkId = null;
-                    }),
-                  ),
-                  const SizedBox(height: 10),
-                  if (parks.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Text('В этом городе нет парков',
-                          style: TextStyle(
-                              fontSize: 11, color: AppColors.amb)),
-                    )
-                  else
-                    DropdownButtonFormField<String>(
-                      initialValue: parkId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Парк'),
-                      items: [
-                        for (final p in parks)
-                          DropdownMenuItem(
-                              value: p.id, child: Text(p.name)),
-                      ],
-                      onChanged: (v) => setS2(() => parkId = v),
-                    ),
-                ]),
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Отмена')),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.amb,
-                    foregroundColor: const Color(0xFF1C1204)),
-                onPressed: () {
-                  if (parkId == null) {
-                    _snack('Выберите парк');
-                    return;
-                  }
-                  Navigator.pop(ctx, parkId);
-                },
-                child: const Text('Перевести'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    if (result == null) return;
-    final newParkId = result;
-    if (currentParkIds.length == 1 && currentParkIds.first == newParkId) {
+    if (currentParkIds.length == 1 && currentParkIds.first == result.parkId) {
       _snack('Уже работает здесь');
       return;
     }
 
-    db.moveToPark(e, newParkId, byAdminId: me.id);
+    db.moveToPark(e, result.parkId!, byAdminId: me.id);
     setS(() {});
-    _snack('Привязан к ${db.parkById(newParkId)?.name ?? "парку"}');
+    _snack('Привязан к ${db.parkById(result.parkId!)?.name ?? "парку"}');
   }
 
   Future<void> _changeRegion(Employee e, StateSetter setS) async {
-    if (db.regions.isEmpty) {
-      _snack('В базе нет регионов');
-      return;
-    }
-    String? regionId = e.regionId;
-
-    final result = await showDialog<String>(
+    final result = await showWorkplaceChangeDialog(
       context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS2) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: Text('Сменить регион · ${e.name}'),
-          content: DropdownButtonFormField<String>(
-            initialValue: regionId,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Регион'),
-            items: [
-              for (final r in db.regions)
-                DropdownMenuItem(value: r.id, child: Text(r.name)),
-            ],
-            onChanged: (v) => setS2(() => regionId = v),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () =>
-                  regionId == null ? null : Navigator.pop(ctx, regionId),
-              child: const Text('Перевести'),
-            ),
-          ],
-        ),
-      ),
+      db: db,
+      employee: e,
+      type: WorkplaceChangeType.region,
     );
+    if (result == null || result.regionId == null) return;
+    if (result.regionId == e.regionId) return;
 
-    if (result == null || result == e.regionId) return;
-    db.moveToRegion(e, result, byAdminId: me.id);
+    db.moveToRegion(e, result.regionId!, byAdminId: me.id);
     setS(() {});
     _snack('Переведён в регион');
   }
