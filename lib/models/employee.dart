@@ -14,14 +14,14 @@ extension EmployeeRoleX on EmployeeRole {
         EmployeeRole.operator: 'Оператор',
         EmployeeRole.technician: 'Механик',
       }[this]!;
-String get fullLabel => const {
-      EmployeeRole.superAdmin: 'Super администратор',
-      EmployeeRole.regionalAdmin: 'Региональный администратор',
-      EmployeeRole.parkAdmin: 'Администратор парка',
-      EmployeeRole.operator: 'Оператор',
-      EmployeeRole.technician: 'Механик',
-    }[this]!;
-  
+
+  String get fullLabel => const {
+        EmployeeRole.superAdmin: 'Super администратор',
+        EmployeeRole.regionalAdmin: 'Региональный администратор',
+        EmployeeRole.parkAdmin: 'Администратор парка',
+        EmployeeRole.operator: 'Оператор',
+        EmployeeRole.technician: 'Механик',
+      }[this]!;
 
   int get colorValue => const {
         EmployeeRole.superAdmin: 0xFFA78BFA,
@@ -156,23 +156,23 @@ class Employee {
   EmployeeRole role;
 
   /// Дополнительные роли (например, [operator] + [technician] в одном парке).
-  /// Основная роль остаётся в [role].
   List<EmployeeRole> additionalRoles;
 
   EmployeeStatus status;
 
   String? parkId;
   String? regionId;
+  
+  /// Город работы (или последний город, если сотрудник свободен).
+  String? cityId; 
+
   String? jobTitle;
   String? address;
-
-  String? lastCityId;
 
   /// Основной руководитель.
   String? managerId;
 
-  /// Дополнительные руководители (например, второй админ того же парка).
-  /// Основной остаётся в [managerId].
+  /// Дополнительные руководители.
   List<String> additionalManagerIds;
 
   DateTime createdAt;
@@ -191,9 +191,9 @@ class Employee {
     this.status = EmployeeStatus.active,
     this.parkId,
     this.regionId,
+    this.cityId,
     this.jobTitle,
     this.address,
-    this.lastCityId,
     this.managerId,
     List<String>? additionalManagerIds,
     DateTime? createdAt,
@@ -208,13 +208,10 @@ class Employee {
   bool get isAdmin => role.canBeAdmin;
   bool get canWork => status.canWork;
 
-  /// Проверка «есть ли у сотрудника такая роль» — с учётом доп. ролей.
   bool hasRole(EmployeeRole r) => role == r || additionalRoles.contains(r);
 
-  /// Все роли (основная + дополнительные) — для отображения.
   List<EmployeeRole> get allRoles => [role, ...additionalRoles];
 
-  /// Все руководители (основной + дополнительные id).
   List<String> get allManagerIds => [
         if (managerId != null) managerId!,
         ...additionalManagerIds,
@@ -227,14 +224,13 @@ class Employee {
         'pin': pin,
         'badgeId': badgeId,
         'role': role.name,
-        'additionalRoles':
-            additionalRoles.map((r) => r.name).toList(),
+        'additionalRoles': additionalRoles.map((r) => r.name).toList(),
         'status': status.name,
         'parkId': parkId,
         'regionId': regionId,
+        'cityId': cityId,
         'jobTitle': jobTitle,
         'address': address,
-        'lastCityId': lastCityId,
         'managerId': managerId,
         'additionalManagerIds': additionalManagerIds,
         'createdAt': createdAt.toIso8601String(),
@@ -266,9 +262,9 @@ class Employee {
         ),
         parkId: j['parkId'],
         regionId: j['regionId'],
+        cityId: j['cityId'] ?? j['lastCityId'], // Бэквард-совместимость
         jobTitle: j['jobTitle'],
         address: j['address'],
-        lastCityId: j['lastCityId'],
         managerId: j['managerId'],
         additionalManagerIds:
             (j['additionalManagerIds'] as List?)?.cast<String>() ?? [],
