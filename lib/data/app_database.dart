@@ -284,6 +284,96 @@ class AppDatabase extends ChangeNotifier {
     }
   }
 
+/// Проверяет, какие роли [currentUser] может назначить [targetEmployee].
+///
+/// В клиент-серверной архитектуре этот метод будет жить на сервере
+/// (например, эндпоинт GET /api/employees/{id}/available-roles).
+RoleAssignmentPermissions getRoleAssignmentPermissions({
+  required Employee currentUser,
+  required Employee targetEmployee,
+}) {
+  const noPermissions = RoleAssignmentPermissions(
+    canChangePrimary: false,
+    availablePrimaryRoles: [],
+    availableExtraRoles: [],
+  );
+
+  // 1. Никто не может менять роль superAdmin
+  if (targetEmployee.role == EmployeeRole.superAdmin) {
+    return noPermissions;
+  }
+
+  // 2. Проверка прав текущего пользователя
+  if (currentUser.role == EmployeeRole.superAdmin) {
+    // Владелец может менять всё (кроме superAdmin)
+    return const RoleAssignmentPermissions(
+      canChangePrimary: true,
+      availablePrimaryRoles: [
+        EmployeeRole.regionalAdmin,
+        EmployeeRole.parkAdmin,
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+      availableExtraRoles: [
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+    );
+  }
+
+  // 3. Региональный админ
+  if (currentUser.role == EmployeeRole.regionalAdmin) {
+    // Проверяем, что targetEmployee в его регионе
+    bool inRegion = false;
+    if (targetEmployee.regionId == currentUser.regionId) {
+      inRegion = true;
+    } else if (targetEmployee.parkId != null) {
+      final regs = regionsOfPark(targetEmployee.parkId!);
+      inRegion = regs.any((r) => r.id == currentUser.regionId);
+    } else if (targetEmployee.hasRole(EmployeeRole.operator)) {
+      final approved = approvedParkIdsForOperator(targetEmployee.id);
+      inRegion = approved.any((pid) => regionsOfPark(pid).any((r) => r.id == currentUser.regionId));
+    }
+
+    if (inRegion) {
+      return const RoleAssignmentPermissions(
+        canChangePrimary: false, // Рег. админ не меняет основную роль
+        availablePrimaryRoles: [],
+        availableExtraRoles: [
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+      );
+    }
+  }
+
+  // 4. Админ парка
+  if (currentUser.role == EmployeeRole.parkAdmin) {
+    // Проверяем, что targetEmployee в его парке
+    bool inPark = targetEmployee.parkId == currentUser.parkId;
+    if (!inPark && targetEmployee.hasRole(EmployeeRole.operator)) {
+      inPark = approvedParkIdsForOperator(targetEmployee.id).contains(currentUser.parkId);
+    }
+
+    if (inPark) {
+      return const RoleAssignmentPermissions(
+        canChangePrimary: false, // Админ парка не меняет основную роль
+        availablePrimaryRoles: [],
+        availableExtraRoles: [
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+      );
+    }
+  }
+
+  return noPermissions;
+}
+
+
+
+
+  
   /// Приводит [e].managerId и [e].additionalManagerIds к корректному
   /// состоянию согласно текущей роли, parkId и regionId.
   void _normalizeManager(Employee e) {
