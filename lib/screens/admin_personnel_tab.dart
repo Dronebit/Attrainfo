@@ -1771,51 +1771,30 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
   // ═══════════ управление ролями ═══════════
 
   Future<void> _manageRoles(Employee e, StateSetter setS) async {
-    if (e.role == EmployeeRole.superAdmin) {
-      _snack('Super-админ — основная роль не меняется');
-      return;
-    }
+  // Запрашиваем права у "сервера"
+  final perms = db.getRoleAssignmentPermissions(
+    currentUser: me,
+    targetEmployee: e,
+  );
 
-    if (e.role.canBeAdmin) {
-      final result = await showRoleManagementDialog(
-        context: context,
-        employee: e,
-        selectableRoles: const [
-          EmployeeRole.parkAdmin,
-          EmployeeRole.regionalAdmin,
-        ],
-        selectableExtras: const [
-          EmployeeRole.operator,
-          EmployeeRole.technician,
-        ],
-        canChangePrimary: false,
-      );
-      if (result == null) return;
-      db.setRoles(e, result.primary, result.extras);
-      setS(() {});
-      _snackAfterRoles(e);
-      return;
-    }
-
-    final result = await showRoleManagementDialog(
-      context: context,
-      employee: e,
-      selectableRoles: const [
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-        EmployeeRole.parkAdmin,
-      ],
-      selectableExtras: const [
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-        EmployeeRole.parkAdmin,
-      ],
-    );
-    if (result == null) return;
-    db.setRoles(e, result.primary, result.extras);
-    setS(() {});
-    _snackAfterRoles(e);
+  if (perms.availablePrimaryRoles.isEmpty && perms.availableExtraRoles.isEmpty) {
+    _snack('У вас нет прав на изменение ролей этого сотрудника');
+    return;
   }
+
+  final result = await showRoleManagementDialog(
+    context: context,
+    employee: e,
+    selectableRoles: perms.canChangePrimary ? perms.availablePrimaryRoles : const [],
+    selectableExtras: perms.availableExtraRoles,
+    canChangePrimary: perms.canChangePrimary,
+  );
+  
+  if (result == null) return;
+  db.setRoles(e, result.primary, result.extras);
+  setS(() {});
+  _snackAfterRoles(e);
+}
 
   void _snackAfterRoles(Employee e) {
     if (e.role == EmployeeRole.parkAdmin) {
