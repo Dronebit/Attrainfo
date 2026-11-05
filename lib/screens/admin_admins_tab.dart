@@ -872,30 +872,18 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
     setState(() {});
   }
 
-Future<void> _manageRoles(Employee admin, StateSetter setS) async {
-  final perms = db.getRoleAssignmentPermissions(
-    currentUser: me,
-    targetEmployee: admin,
-  );
-
-  if (perms.availablePrimaryRoles.isEmpty && perms.availableExtraRoles.isEmpty) {
-    _snack('У вас нет прав на изменение ролей этого администратора');
-    return;
-  }
-
-  final result = await showRoleManagementDialog(
+Future<void> _manageRoles(Employee e, StateSetter setS) async {
+  final changed = await showAndSaveRoles(
     context: context,
-    employee: admin,
-    selectableRoles: perms.canChangePrimary ? perms.availablePrimaryRoles : const [],
-    selectableExtras: perms.availableExtraRoles,
-    canChangePrimary: perms.canChangePrimary,
+    db: db,
+    currentUser: me,
+    targetEmployee: e,
   );
   
-  if (result == null) return;
-  db.setRoles(admin, result.primary, result.extras);
+  if (!changed) return;
+  
   setS(() {});
-  setState(() {});
-  _snack('Роли обновлены');
+  _snackAfterRoles(e);
 }
 
 
