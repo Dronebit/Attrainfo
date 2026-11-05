@@ -427,8 +427,8 @@ class AppDatabase extends ChangeNotifier {
   /// Снимает админа парка с должности.
   ///
   /// Освобождает parkId/regionId, отвязывает его от операторов/техников парка.
-  /// Роль принудительно ставится `parkAdmin`, чтобы после снятия
-  /// сотрудник попадал в «Свободные админы парков».
+  /// Если после снятия у парка не осталось активных админов — возвращает
+  /// операторов и техников под управление рег. админа региона.
   void removeAdminFromPark(Employee admin, {String? byAdminId}) {
     final now = DateTime.now();
     final removedParkId = admin.parkId;
@@ -447,7 +447,18 @@ class AppDatabase extends ChangeNotifier {
 
     if (removedParkId != null) {
       final park = parkById(removedParkId);
-      if (park != null) _detachFromParkStaff(admin, park);
+      if (park != null) {
+        _detachFromParkStaff(admin, park);
+
+        // Если парк остался без админа — вернуть под рег. админа
+        if (parkAdminsOf(removedParkId).isEmpty) {
+          for (final reg in regionsOfPark(removedParkId)) {
+            for (final ra in regionalAdminsOf(reg.id)) {
+              _subordinateOrphanParkStaff(ra, reg);
+            }
+          }
+        }
+      }
     }
 
     save();
@@ -548,6 +559,11 @@ class AppDatabase extends ChangeNotifier {
     }
   }
 
+  /// Подчиняет операторов и техников парка админу.
+  ///
+  /// Заодно снимает с них рег. админов региона как руководителей —
+  /// если у парка появился свой админ, операторы отчитываются ему,
+  /// а не рег. админу. Рег. админ остаётся руководителем самого админа.
   void _subordinateParkStaffTo(Employee admin, Park park) {
     bool needsAdditional(Employee e) {
       if (e.managerId == null) return false;
@@ -568,10 +584,27 @@ class AppDatabase extends ChangeNotifier {
       }
     }
 
+    // Рег. админы региона парка — временные руководители.
+    // Убираем их, когда появляется парковый админ.
+    final regionAdminIds = <String>{};
+    for (final reg in regionsOfPark(park.id)) {
+      for (final ra in regionalAdminsOf(reg.id)) {
+        if (ra.id != admin.id) regionAdminIds.add(ra.id);
+      }
+    }
+
+    void removeRegionAdmins(Employee e) {
+      for (final id in regionAdminIds) {
+        if (e.managerId == id) e.managerId = null;
+        e.additionalManagerIds.remove(id);
+      }
+    }
+
     for (final link in operatorLinks) {
       if (link.parkId == park.id && link.status == LinkStatus.approved) {
         final op = employeeById(link.operatorId);
         if (op != null && op.status != EmployeeStatus.fired) {
+          removeRegionAdmins(op);
           addManager(op);
         }
       }
@@ -580,6 +613,7 @@ class AppDatabase extends ChangeNotifier {
     for (final e in employees) {
       if (e.status == EmployeeStatus.fired) continue;
       if (e.hasRole(EmployeeRole.technician) && e.parkId == park.id) {
+        removeRegionAdmins(e);
         addManager(e);
       }
     }
@@ -724,8 +758,11 @@ class AppDatabase extends ChangeNotifier {
   /// Для операторов — переоформляет связь (reject старых + create новой).
   /// Если сотрудник — админ парка, ему проставляется parkId, назначается
   /// руководитель (рег. админ/super) и подчиняются операторы/техники парка.
+  /// Если он переезжает из другого парка — отвязывается от старого,
+  /// а старый парк, если остался без админа, возвращается под рег. админа.
   void moveToPark(Employee e, String parkId, {String? byAdminId}) {
     final now = DateTime.now();
+    final oldParkId = e.parkId;
     _closeCurrentHistory(e, 'Переведён в другой парк');
 
     final wasParkAdmin = e.hasRole(EmployeeRole.parkAdmin);
@@ -769,7 +806,22 @@ class AppDatabase extends ChangeNotifier {
       if (loc != null) e.lastCityId = loc.cityId;
 
       if (wasParkAdmin) {
-        // Админ парка — проставляем parkId и подчиняем сотрудников парка
+        // Отвязать от старого парка (если переезжает)
+        if (oldParkId != null && oldParkId != parkId) {
+          final oldPark = parkById(oldParkId);
+          if (oldPark != null) {
+            _detachFromParkStaff(e, oldPark);
+            if (parkAdminsOf(oldParkId).isEmpty) {
+              for (final reg in regionsOfPark(oldParkId)) {
+                for (final ra in regionalAdminsOf(reg.id)) {
+                  _subordinateOrphanParkStaff(ra, reg);
+                }
+              }
+            }
+          }
+        }
+
+        // Назначить в новый парк
         e.parkId = parkId;
         _autoAssignManager(e, park);
         _subordinateParkStaffTo(e, park);
@@ -799,7 +851,16 @@ class AppDatabase extends ChangeNotifier {
 
     if (oldParkId != null) {
       final oldPark = parkById(oldParkId);
-      if (oldPark != null) _detachFromParkStaff(e, oldPark);
+      if (oldPark != null) {
+        _detachFromParkStaff(e, oldPark);
+        if (parkAdminsOf(oldParkId).isEmpty) {
+          for (final reg in regionsOfPark(oldParkId)) {
+            for (final ra in regionalAdminsOf(reg.id)) {
+              _subordinateOrphanParkStaff(ra, reg);
+            }
+          }
+        }
+      }
     }
     if (oldRegionId != null && oldRegionId != regionId) {
       final oldRegion = regionById(oldRegionId);
