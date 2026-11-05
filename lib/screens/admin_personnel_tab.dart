@@ -2763,7 +2763,6 @@ class _AdminPersonnelTabState extends State<AdminPersonnelTab> {
     return true;
   }
 
-  String _uid() => 'x${DateTime.now().microsecondsSinceEpoch}';
 
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
