@@ -217,59 +217,23 @@ class AppDatabase extends ChangeNotifier {
   // ═══════════ права на изменение ролей ═══════════
 
   RoleAssignmentPermissions getRoleAssignmentPermissions({
-  required Employee currentUser,
-  required Employee targetEmployee,
-}) {
-  const noPermissions = RoleAssignmentPermissions(
-    canChangePrimary: false,
-    availablePrimaryRoles: [],
-    availableExtraRoles: [],
-  );
-
-  // 0. Нельзя менять роли самому себе (защита от самопонижения/повышения).
-  // Себя может редактировать только superAdmin, но и ему это обычно не нужно.
-  if (currentUser.id == targetEmployee.id) {
-    return noPermissions;
-  }
-
-  if (targetEmployee.role == EmployeeRole.superAdmin) {
-    return noPermissions;
-  }
-
-  // 1. Владелец может всё (кроме superAdmin)
-  if (currentUser.role == EmployeeRole.superAdmin) {
-    return const RoleAssignmentPermissions(
-      canChangePrimary: true,
-      availablePrimaryRoles: [
-        EmployeeRole.regionalAdmin,
-        EmployeeRole.parkAdmin,
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-      ],
-      availableExtraRoles: [
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-      ],
+    required Employee currentUser,
+    required Employee targetEmployee,
+  }) {
+    const noPermissions = RoleAssignmentPermissions(
+      canChangePrimary: false,
+      availablePrimaryRoles: [],
+      availableExtraRoles: [],
     );
-  }
 
-  // 2. Региональный админ — может менять роли подчинённым в своём регионе
-  if (currentUser.role == EmployeeRole.regionalAdmin) {
-    bool inRegion = targetEmployee.regionId == currentUser.regionId;
-    if (!inRegion && targetEmployee.parkId != null) {
-      inRegion = regionsOfPark(targetEmployee.parkId!)
-          .any((r) => r.id == currentUser.regionId);
-    }
-    if (!inRegion && targetEmployee.hasRole(EmployeeRole.operator)) {
-      inRegion = approvedParkIdsForOperator(targetEmployee.id)
-          .any((pid) => regionsOfPark(pid)
-              .any((r) => r.id == currentUser.regionId));
-    }
+    if (currentUser.id == targetEmployee.id) return noPermissions;
+    if (targetEmployee.role == EmployeeRole.superAdmin) return noPermissions;
 
-    if (inRegion) {
+    if (currentUser.role == EmployeeRole.superAdmin) {
       return const RoleAssignmentPermissions(
         canChangePrimary: true,
         availablePrimaryRoles: [
+          EmployeeRole.regionalAdmin,
           EmployeeRole.parkAdmin,
           EmployeeRole.operator,
           EmployeeRole.technician,
@@ -280,34 +244,60 @@ class AppDatabase extends ChangeNotifier {
         ],
       );
     }
-  }
 
-  // 3. Админ парка — может менять роли подчинённым в своём парке
-  if (currentUser.role == EmployeeRole.parkAdmin &&
-      currentUser.parkId != null) {
-    bool inPark = targetEmployee.parkId == currentUser.parkId;
-    if (!inPark && targetEmployee.hasRole(EmployeeRole.operator)) {
-      inPark = approvedParkIdsForOperator(targetEmployee.id)
-          .contains(currentUser.parkId);
+    if (currentUser.role == EmployeeRole.regionalAdmin) {
+      bool inRegion = targetEmployee.regionId == currentUser.regionId;
+      if (!inRegion && targetEmployee.parkId != null) {
+        inRegion = regionsOfPark(targetEmployee.parkId!)
+            .any((r) => r.id == currentUser.regionId);
+      }
+      if (!inRegion && targetEmployee.hasRole(EmployeeRole.operator)) {
+        inRegion = approvedParkIdsForOperator(targetEmployee.id)
+            .any((pid) => regionsOfPark(pid)
+                .any((r) => r.id == currentUser.regionId));
+      }
+
+      if (inRegion) {
+        return const RoleAssignmentPermissions(
+          canChangePrimary: true,
+          availablePrimaryRoles: [
+            EmployeeRole.parkAdmin,
+            EmployeeRole.operator,
+            EmployeeRole.technician,
+          ],
+          availableExtraRoles: [
+            EmployeeRole.operator,
+            EmployeeRole.technician,
+          ],
+        );
+      }
     }
 
-    if (inPark) {
-      return const RoleAssignmentPermissions(
-        canChangePrimary: true,
-        availablePrimaryRoles: [
-          EmployeeRole.operator,
-          EmployeeRole.technician,
-        ],
-        availableExtraRoles: [
-          EmployeeRole.operator,
-          EmployeeRole.technician,
-        ],
-      );
-    }
-  }
+    if (currentUser.role == EmployeeRole.parkAdmin &&
+        currentUser.parkId != null) {
+      bool inPark = targetEmployee.parkId == currentUser.parkId;
+      if (!inPark && targetEmployee.hasRole(EmployeeRole.operator)) {
+        inPark = approvedParkIdsForOperator(targetEmployee.id)
+            .contains(currentUser.parkId);
+      }
 
-  return noPermissions;
-}
+      if (inPark) {
+        return const RoleAssignmentPermissions(
+          canChangePrimary: true,
+          availablePrimaryRoles: [
+            EmployeeRole.operator,
+            EmployeeRole.technician,
+          ],
+          availableExtraRoles: [
+            EmployeeRole.operator,
+            EmployeeRole.technician,
+          ],
+        );
+      }
+    }
+
+    return noPermissions;
+  }
 
   // ═══════════ нормализация и хелперы ═══════════
 
@@ -396,6 +386,14 @@ class AppDatabase extends ChangeNotifier {
 
     if (e.role == EmployeeRole.parkAdmin) {
       if (e.parkId != null) {
+        final p = parkById(e.parkId);
+        if (p != null) {
+          final loc = locById(p.locId);
+          if (loc != null) e.cityId = loc.cityId;
+          final regs = regionsOfPark(e.parkId!);
+          if (regs.isNotEmpty) e.regionId = regs.first.id;
+        }
+
         final ras = <Employee>[];
         for (final reg in regionsOfPark(e.parkId!)) {
           for (final ra in regionalAdminsOf(reg.id)) {
@@ -429,33 +427,37 @@ class AppDatabase extends ChangeNotifier {
       if (approved.isNotEmpty) parkForMgr = approved.first;
     }
 
-    if (parkForMgr == null) {
-      e.managerId = null;
-      e.additionalManagerIds.clear();
-      return;
-    }
+    if (parkForMgr != null) {
+      final p = parkById(parkForMgr);
+      if (p != null) {
+        final loc = locById(p.locId);
+        if (loc != null) e.cityId = loc.cityId;
+        final regs = regionsOfPark(parkForMgr);
+        if (regs.isNotEmpty) e.regionId = regs.first.id;
+      }
 
-    final pas = parkAdminsOf(parkForMgr)
-        .where((x) => x.id != e.id)
-        .toList();
-    if (pas.isNotEmpty) {
-      e.managerId = pas.first.id;
-      e.additionalManagerIds = pas.skip(1).map((x) => x.id).toList();
-      return;
-    }
+      final pas = parkAdminsOf(parkForMgr)
+          .where((x) => x.id != e.id)
+          .toList();
+      if (pas.isNotEmpty) {
+        e.managerId = pas.first.id;
+        e.additionalManagerIds = pas.skip(1).map((x) => x.id).toList();
+        return;
+      }
 
-    final ras = <Employee>[];
-    for (final reg in regionsOfPark(parkForMgr)) {
-      for (final ra in regionalAdminsOf(reg.id)) {
-        if (ra.id != e.id && !ras.any((x) => x.id == ra.id)) {
-          ras.add(ra);
+      final ras = <Employee>[];
+      for (final reg in regionsOfPark(parkForMgr)) {
+        for (final ra in regionalAdminsOf(reg.id)) {
+          if (ra.id != e.id && !ras.any((x) => x.id == ra.id)) {
+            ras.add(ra);
+          }
         }
       }
-    }
-    if (ras.isNotEmpty) {
-      e.managerId = ras.first.id;
-      e.additionalManagerIds = ras.skip(1).map((x) => x.id).toList();
-      return;
+      if (ras.isNotEmpty) {
+        e.managerId = ras.first.id;
+        e.additionalManagerIds = ras.skip(1).map((x) => x.id).toList();
+        return;
+      }
     }
 
     final supers = superAdmins.where((s) => s.id != e.id).toList();
@@ -538,16 +540,7 @@ class AppDatabase extends ChangeNotifier {
   }
 
   City? cityOfAdmin(Employee admin) {
-    if (admin.role == EmployeeRole.parkAdmin && admin.parkId != null) {
-      final park = parkById(admin.parkId);
-      if (park == null) return null;
-      final loc = locById(park.locId);
-      return loc == null ? null : cityById(loc.cityId);
-    }
-    if (admin.lastCityId != null) {
-      return cityById(admin.lastCityId);
-    }
-    return null;
+    return admin.cityId == null ? null : cityById(admin.cityId);
   }
 
   // ═══════════ регионы CRUD ═══════════
@@ -624,12 +617,15 @@ class AppDatabase extends ChangeNotifier {
 
     admin.role = EmployeeRole.parkAdmin;
     admin.parkId = park.id;
-    admin.regionId = null;
+    
+    // Устанавливаем регион и город при привязке
+    final regs = regionsOfPark(park.id);
+    admin.regionId = regs.isNotEmpty ? regs.first.id : null;
+    final loc = locById(park.locId);
+    admin.cityId = loc?.cityId;
+
     admin.status = EmployeeStatus.active;
     admin.statusChangedAt = DateTime.now();
-
-    final loc = locById(park.locId);
-    if (loc != null) admin.lastCityId = loc.cityId;
 
     _normalizeManager(admin);
 
@@ -649,7 +645,8 @@ class AppDatabase extends ChangeNotifier {
 
     admin.role = EmployeeRole.parkAdmin;
     admin.parkId = null;
-    admin.regionId = null;
+    // admin.regionId = null; // НЕ ОБНУЛЯЕМ
+    // admin.cityId = null;   // НЕ ОБНУЛЯЕМ
     admin.status = EmployeeStatus.active;
     admin.statusChangedAt = DateTime.now();
 
@@ -785,7 +782,6 @@ class AppDatabase extends ChangeNotifier {
       final approvedParks = approvedParkIdsForOperator(e.id);
       if (approvedParks.isNotEmpty) {
         e.parkId = approvedParks.first;
-        e.regionId = null;
       }
     }
 
@@ -841,19 +837,20 @@ class AppDatabase extends ChangeNotifier {
       e.parkId = parkId;
     }
 
-    e.regionId = null;
-    e.status = EmployeeStatus.active;
-    e.statusChangedAt = now;
-
     final park = parkById(parkId);
     if (park != null) {
       final loc = locById(park.locId);
-      if (loc != null) e.lastCityId = loc.cityId;
+      e.cityId = loc?.cityId;
+      final regs = regionsOfPark(park.id);
+      e.regionId = regs.isNotEmpty ? regs.first.id : null;
 
       if (wasParkAdmin) {
         e.parkId = parkId;
       }
     }
+
+    e.status = EmployeeStatus.active;
+    e.statusChangedAt = now;
 
     _normalizeManager(e);
 
@@ -915,7 +912,9 @@ class AppDatabase extends ChangeNotifier {
     }
 
     e.parkId = null;
-    e.regionId = null;
+    // e.regionId = null; // НЕ ОБНУЛЯЕМ!
+    // e.cityId = null;   // НЕ ОБНУЛЯЕМ!
+
     e.status = EmployeeStatus.active;
     e.statusChangedAt = DateTime.now();
 
@@ -963,6 +962,7 @@ class AppDatabase extends ChangeNotifier {
     e.statusChangedAt = DateTime.now();
     e.parkId = null;
     e.regionId = null;
+    e.cityId = null;
 
     _normalizeManager(e);
 
