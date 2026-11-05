@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/employee.dart';
 import '../theme.dart';
+import '../data/app_database.dart
+
 
 /// Результат диалога управления ролями.
 class RoleChangeResult {
@@ -254,4 +256,39 @@ class _RoleManagementDialogState extends State<_RoleManagementDialog> {
       ),
     );
   }
+}
+
+/// Запрашивает права у AppDatabase, открывает диалог и сохраняет изменения.
+/// Возвращает true, если роли были изменены.
+Future<bool> showAndSaveRoles({
+  required BuildContext context,
+  required AppDatabase db,
+  required Employee currentUser,
+  required Employee targetEmployee,
+}) async {
+  // 1. Запрашиваем права (в будущем — API запрос)
+  final perms = db.getRoleAssignmentPermissions(
+    currentUser: currentUser,
+    targetEmployee: targetEmployee,
+  );
+
+  // 2. Если прав нет — молча выходим или показываем снек (лучше обработать в UI)
+  if (perms.availablePrimaryRoles.isEmpty && perms.availableExtraRoles.isEmpty) {
+    return false;
+  }
+
+  // 3. Открываем диалог
+  final result = await showRoleManagementDialog(
+    context: context,
+    employee: targetEmployee,
+    selectableRoles: perms.canChangePrimary ? perms.availablePrimaryRoles : const [],
+    selectableExtras: perms.availableExtraRoles,
+    canChangePrimary: perms.canChangePrimary,
+  );
+
+  if (result == null) return false;
+
+  // 4. Сохраняем
+  db.setRoles(targetEmployee, result.primary, result.extras);
+  return true;
 }
