@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../models/region.dart';
 import '../theme.dart';
 import '../widgets/role_management_dialog.dart';
+import '../widgets/workplace_change_dialog.dart';
 
 class AdminAdminsTab extends StatefulWidget {
   final AppDatabase db;
@@ -910,59 +911,19 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   // ═══════════ Перевод ═══════════
 
   Future<void> _changePark(Employee admin) async {
-    final currentParkId = admin.parkId;
-    final available = db.parks
-        .where((p) => p.id != currentParkId)
-        .toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
-    if (available.isEmpty) {
-      _snack('Нет других парков');
+    final result = await showWorkplaceChangeDialog(
+      context: context,
+      db: db,
+      employee: admin,
+      type: WorkplaceChangeType.park,
+    );
+    if (result == null || result.parkId == null) return;
+    if (result.parkId == admin.parkId) {
+      _snack('Уже в этом парке');
       return;
     }
 
-    String? selId = available.first.id;
-    final ok = await showDialog<bool>(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: Text('Перевести · ${admin.name}'),
-          content: SizedBox(
-            width: 440,
-            child: DropdownButtonFormField<String>(
-              initialValue: selId,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Парк'),
-              items: [
-                for (final p in available)
-                  DropdownMenuItem(
-                    value: p.id,
-                    child: Text('${p.name} · ${db.cityOfPark(p)}',
-                        overflow: TextOverflow.ellipsis),
-                  ),
-              ],
-              onChanged: (v) => setS(() => selId = v),
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Перевести'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || selId == null) return;
-    final park = db.parkById(selId!);
+    final park = db.parkById(result.parkId!);
     if (park == null) return;
     db.assignAdminToPark(admin, park, reason: 'Переведён в другой парк');
     setState(() {});
@@ -970,53 +931,19 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   }
 
   Future<void> _changeRegion(Employee admin) async {
-    final currentRegionId = admin.regionId;
-    final available =
-        db.regions.where((r) => r.id != currentRegionId).toList();
-    if (available.isEmpty) {
-      _snack('Нет других регионов');
+    final result = await showWorkplaceChangeDialog(
+      context: context,
+      db: db,
+      employee: admin,
+      type: WorkplaceChangeType.region,
+    );
+    if (result == null || result.regionId == null) return;
+    if (result.regionId == admin.regionId) {
+      _snack('Уже в этом регионе');
       return;
     }
 
-    String? selId = available.first.id;
-    final ok = await showDialog<bool>(
-      context: context,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: Text('Перевести · ${admin.name}'),
-          content: SizedBox(
-            width: 440,
-            child: DropdownButtonFormField<String>(
-              initialValue: selId,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Регион'),
-              items: [
-                for (final r in available)
-                  DropdownMenuItem(value: r.id, child: Text(r.name)),
-              ],
-              onChanged: (v) => setS(() => selId = v),
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Перевести'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || selId == null) return;
-    final region = db.regionById(selId!);
+    final region = db.regionById(result.regionId!);
     if (region == null) return;
     db.assignRegionalAdmin(admin, region, reason: 'Переведён в другой регион');
     setState(() {});
