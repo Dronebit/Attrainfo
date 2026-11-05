@@ -9,7 +9,7 @@ import '../models/shift_vacancy.dart';
 import '../models/shift.dart';
 import '../models/region.dart';
 import 'seed.dart';
-import '../models/permissions.dart';.
+import '../models/permissions.dart';
 
 /// Права на изменение ролей конкретного сотрудника.
 
