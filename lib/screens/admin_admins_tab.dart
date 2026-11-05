@@ -872,30 +872,34 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
     setState(() {});
   }
 
-  Future<void> _manageRoles(Employee admin, StateSetter setS) async {
-    // SuperAdmin (владелец) может менять основную роль.
-    // RegionalAdmin — только дополнительные.
-    final isOwner = me.role == EmployeeRole.superAdmin;
+Future<void> _manageRoles(Employee admin, StateSetter setS) async {
+  final perms = db.getRoleAssignmentPermissions(
+    currentUser: me,
+    targetEmployee: admin,
+  );
 
-    final result = await showRoleManagementDialog(
-      context: context,
-      employee: admin,
-      selectableRoles: const [
-        EmployeeRole.parkAdmin,
-        EmployeeRole.regionalAdmin,
-      ],
-      selectableExtras: const [
-        EmployeeRole.operator,
-        EmployeeRole.technician,
-      ],
-      canChangePrimary: isOwner,
-    );
-    if (result == null) return;
-    db.setRoles(admin, result.primary, result.extras);
-    setS(() {});
-    setState(() {});
-    _snack('Роли обновлены');
+  if (perms.availablePrimaryRoles.isEmpty && perms.availableExtraRoles.isEmpty) {
+    _snack('У вас нет прав на изменение ролей этого администратора');
+    return;
   }
+
+  final result = await showRoleManagementDialog(
+    context: context,
+    employee: admin,
+    selectableRoles: perms.canChangePrimary ? perms.availablePrimaryRoles : const [],
+    selectableExtras: perms.availableExtraRoles,
+    canChangePrimary: perms.canChangePrimary,
+  );
+  
+  if (result == null) return;
+  db.setRoles(admin, result.primary, result.extras);
+  setS(() {});
+  setState(() {});
+  _snack('Роли обновлены');
+}
+
+
+  
 
   Widget _infoLine(String label, String value,
       {bool mono = false, Color? color}) {
