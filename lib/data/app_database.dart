@@ -9,19 +9,9 @@ import '../models/shift_vacancy.dart';
 import '../models/shift.dart';
 import '../models/region.dart';
 import 'seed.dart';
+import '../models/permissions.dart';.
 
 /// Права на изменение ролей конкретного сотрудника.
-class RoleAssignmentPermissions {
-  final bool canChangePrimary;
-  final List<EmployeeRole> availablePrimaryRoles;
-  final List<EmployeeRole> availableExtraRoles;
-
-  const RoleAssignmentPermissions({
-    required this.canChangePrimary,
-    required this.availablePrimaryRoles,
-    required this.availableExtraRoles,
-  });
-}
 
 class AppDatabase extends ChangeNotifier {
   static const _key = 'attrakontrol-v8';
