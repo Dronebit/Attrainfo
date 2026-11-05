@@ -5,6 +5,7 @@ import '../models/employee.dart';
 import '../models/models.dart';
 import '../models/region.dart';
 import '../theme.dart';
+import '../widgets/role_management_dialog.dart';
 
 class AdminAdminsTab extends StatefulWidget {
   final AppDatabase db;
@@ -96,14 +97,13 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   Widget _firedToggle() {
     final active = _showFired;
     return Tooltip(
-      message: active
-          ? 'Скрыть уволенных'
-          : 'Показать уволенных',
+      message: active ? 'Скрыть уволенных' : 'Показать уволенных',
       child: InkWell(
         onTap: () => setState(() => _showFired = !_showFired),
         borderRadius: BorderRadius.circular(9),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           decoration: BoxDecoration(
             color: active
                 ? AppColors.red.withValues(alpha: 0.12)
@@ -716,6 +716,12 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                     _infoLine('PIN', current.pin, mono: true),
                     _infoLine('Статус', current.status.label,
                         color: Color(current.status.colorValue)),
+                    if (current.additionalRoles.isNotEmpty)
+                      _infoLine(
+                          'Доп. роли',
+                          current.additionalRoles
+                              .map((r) => r.label)
+                              .join(', ')),
                     if (region != null) _infoLine('Регион', region.name),
                     if (park != null) _infoLine('Парк', park.name),
                     if (region == null && park == null && !isSuper)
@@ -724,6 +730,17 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                           color: isFired ? AppColors.red : AppColors.org),
                     const SizedBox(height: 14),
                     if (!isSuper && !isFired) ...[
+                      OutlinedButton.icon(
+                        onPressed: () => _manageRoles(current, setS),
+                        icon: const Icon(Icons.manage_accounts, size: 16),
+                        label: const Text('Роли'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.pur,
+                          side: BorderSide(
+                              color: AppColors.pur.withValues(alpha: 0.4)),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
                       if (isPark) ...[
                         OutlinedButton.icon(
                           onPressed: () {
@@ -841,6 +858,27 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       ),
     );
     setState(() {});
+  }
+
+  Future<void> _manageRoles(Employee admin, StateSetter setS) async {
+    final result = await showRoleManagementDialog(
+      context: context,
+      employee: admin,
+      selectableRoles: const [
+        EmployeeRole.parkAdmin,
+        EmployeeRole.regionalAdmin,
+      ],
+      selectableExtras: const [
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+      canChangePrimary: false,
+    );
+    if (result == null) return;
+    db.setRoles(admin, result.primary, result.extras);
+    setS(() {});
+    setState(() {});
+    _snack('Роли обновлены');
   }
 
   Widget _infoLine(String label, String value,
@@ -1033,8 +1071,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                   const _SectionLabel('СВОБОДНЫЕ'),
                   ...free.map((a) => _candidateTile(
                         a,
-                        subtitle:
-                            'Свободен · ${a.role.label}',
+                        subtitle: 'Свободен · ${a.role.label}',
                         onTap: () async {
                           db.assignRegionalAdmin(a, region,
                               reason: 'Назначен из списка');
