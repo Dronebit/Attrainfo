@@ -245,19 +245,8 @@ class AppDatabase extends ChangeNotifier {
       );
     }
 
-    if (currentUser.role == EmployeeRole.regionalAdmin) {
-      bool inRegion = targetEmployee.regionId == currentUser.regionId;
-      if (!inRegion && targetEmployee.parkId != null) {
-        inRegion = regionsOfPark(targetEmployee.parkId!)
-            .any((r) => r.id == currentUser.regionId);
-      }
-      if (!inRegion && targetEmployee.hasRole(EmployeeRole.operator)) {
-        inRegion = approvedParkIdsForOperator(targetEmployee.id)
-            .any((pid) => regionsOfPark(pid)
-                .any((r) => r.id == currentUser.regionId));
-      }
-
-      if (inRegion) {
+    if (currentUser.role == EmployeeRole.regionalAdmin && currentUser.regionId != null) {
+      if (isEmployeeInRegion(targetEmployee, currentUser.regionId!)) {
         return const RoleAssignmentPermissions(
           canChangePrimary: true,
           availablePrimaryRoles: [
@@ -300,12 +289,6 @@ class AppDatabase extends ChangeNotifier {
   }
 
   // ═══════════ нормализация и хелперы ═══════════
-
-  String? _findSuperId({String? exceptId}) {
-    return superAdmins
-        .firstWhereOrNull((s) => exceptId == null || s.id != exceptId)
-        ?.id;
-  }
 
   void _addHistory(
     Employee e,
@@ -543,6 +526,73 @@ class AppDatabase extends ChangeNotifier {
     return admin.cityId == null ? null : cityById(admin.cityId);
   }
 
+  /// Возвращает город, в котором работает (или последний раз работал) сотрудник.
+  City? cityOfEmployee(Employee e) {
+    if (e.cityId != null) return cityById(e.cityId);
+    if (e.parkId != null) {
+      final p = parkById(e.parkId);
+      if (p != null) {
+        final loc = locById(p.locId);
+        if (loc != null) return cityById(loc.cityId);
+      }
+    }
+    if (e.hasRole(EmployeeRole.operator)) {
+      final approved = approvedParkIdsForOperator(e.id);
+      if (approved.isNotEmpty) {
+        final p = parkById(approved.first);
+        if (p != null) {
+          final loc = locById(p.locId);
+          if (loc != null) return cityById(loc.cityId);
+        }
+      }
+    }
+    for (final h in e.history.reversed) {
+      if (h.parkId != null) {
+        final p = parkById(h.parkId);
+        if (p != null) {
+          final loc = locById(p.locId);
+          if (loc != null) return cityById(loc.cityId);
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Проверяет, относится ли сотрудник к указанному региону.
+  bool isEmployeeInRegion(Employee e, String regionId) {
+    if (e.regionId == regionId) return true;
+
+    if (e.parkId != null) {
+      if (regionsOfPark(e.parkId!).any((r) => r.id == regionId)) return true;
+    }
+
+    if (e.hasRole(EmployeeRole.operator)) {
+      if (approvedParkIdsForOperator(e.id).any((pid) => regionsOfPark(pid).any((r) => r.id == regionId))) {
+        return true;
+      }
+    }
+
+    if (e.cityId != null) {
+      final region = regionById(regionId);
+      if (region != null) {
+        final locsInCity = locations.where((l) => l.cityId == e.cityId).map((l) => l.id).toSet();
+        final parksInCity = parks.where((p) => locsInCity.contains(p.locId)).map((p) => p.id).toSet();
+        if (region.parkIds.any((pid) => parksInCity.contains(pid))) {
+          return true;
+        }
+      }
+    }
+
+    for (final h in e.history) {
+      if (h.regionId == regionId) return true;
+      if (h.parkId != null && regionsOfPark(h.parkId!).any((r) => r.id == regionId)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   // ═══════════ регионы CRUD ═══════════
 
   Region createRegion(String name, {List<String>? parkIds}) {
@@ -618,7 +668,6 @@ class AppDatabase extends ChangeNotifier {
     admin.role = EmployeeRole.parkAdmin;
     admin.parkId = park.id;
     
-    // Устанавливаем регион и город при привязке
     final regs = regionsOfPark(park.id);
     admin.regionId = regs.isNotEmpty ? regs.first.id : null;
     final loc = locById(park.locId);
@@ -645,8 +694,6 @@ class AppDatabase extends ChangeNotifier {
 
     admin.role = EmployeeRole.parkAdmin;
     admin.parkId = null;
-    // admin.regionId = null; // НЕ ОБНУЛЯЕМ
-    // admin.cityId = null;   // НЕ ОБНУЛЯЕМ
     admin.status = EmployeeStatus.active;
     admin.statusChangedAt = DateTime.now();
 
@@ -912,9 +959,7 @@ class AppDatabase extends ChangeNotifier {
     }
 
     e.parkId = null;
-    // e.regionId = null; // НЕ ОБНУЛЯЕМ!
-    // e.cityId = null;   // НЕ ОБНУЛЯЕМ!
-
+    
     e.status = EmployeeStatus.active;
     e.statusChangedAt = DateTime.now();
 
