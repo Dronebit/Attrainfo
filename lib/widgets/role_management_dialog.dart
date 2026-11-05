@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import '../data/app_database.dart';
 import '../models/employee.dart';
+import '../models/permissions.dart';
 import '../theme.dart';
-import '../data/app_database.dart
-
 
 /// Результат диалога управления ролями.
 class RoleChangeResult {
@@ -12,11 +12,6 @@ class RoleChangeResult {
 }
 
 /// Открывает диалог управления ролями.
-///
-/// [selectableRoles] — роли для выбора «Основная» (radio).
-/// [selectableExtras] — роли для выбора «Дополнительные» (checkbox).
-/// [canChangePrimary] — если `false`, основную роль поменять нельзя
-///   (будет показана как readonly-бейдж).
 Future<RoleChangeResult?> showRoleManagementDialog({
   required BuildContext context,
   required Employee employee,
@@ -39,6 +34,41 @@ Future<RoleChangeResult?> showRoleManagementDialog({
   );
 }
 
+/// Запрашивает права у AppDatabase, открывает диалог и сохраняет изменения.
+/// Возвращает true, если роли были изменены.
+Future<bool> showAndSaveRoles({
+  required BuildContext context,
+  required AppDatabase db,
+  required Employee currentUser,
+  required Employee targetEmployee,
+}) async {
+  final RoleAssignmentPermissions perms =
+      db.getRoleAssignmentPermissions(
+    currentUser: currentUser,
+    targetEmployee: targetEmployee,
+  );
+
+  if (perms.availablePrimaryRoles.isEmpty &&
+      perms.availableExtraRoles.isEmpty) {
+    return false;
+  }
+
+  final result = await showRoleManagementDialog(
+    context: context,
+    employee: targetEmployee,
+    selectableRoles: perms.canChangePrimary
+        ? perms.availablePrimaryRoles
+        : const [],
+    selectableExtras: perms.availableExtraRoles,
+    canChangePrimary: perms.canChangePrimary,
+  );
+
+  if (result == null) return false;
+
+  db.setRoles(targetEmployee, result.primary, result.extras);
+  return true;
+}
+
 class _RoleManagementDialog extends StatefulWidget {
   final Employee employee;
   final List<EmployeeRole> selectableRoles;
@@ -55,8 +85,7 @@ class _RoleManagementDialog extends StatefulWidget {
   });
 
   @override
-  State<_RoleManagementDialog> createState() =>
-      _RoleManagementDialogState();
+  State<_RoleManagementDialog> createState() => _RoleManagementDialogState();
 }
 
 class _RoleManagementDialogState extends State<_RoleManagementDialog> {
@@ -68,7 +97,6 @@ class _RoleManagementDialogState extends State<_RoleManagementDialog> {
     super.initState();
     _primary = widget.employee.role;
     _extras = Set.from(widget.employee.additionalRoles);
-    // Убираем возможные дубли: primary не должен быть в extras
     _extras.remove(_primary);
   }
 
@@ -76,8 +104,6 @@ class _RoleManagementDialogState extends State<_RoleManagementDialog> {
     if (!widget.canChangePrimary) return;
     if (_primary == r) return;
     setState(() {
-      // Старую primary — в extras (если она не админ, чтобы не плодить
-      // админ-ролей в допах), новую — убираем из extras.
       if (!_primary.canBeAdmin) {
         _extras.add(_primary);
       }
@@ -174,8 +200,7 @@ class _RoleManagementDialogState extends State<_RoleManagementDialog> {
       onTap: () => _selectPrimary(r),
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: active
               ? Color(r.colorValue).withValues(alpha: 0.12)
@@ -192,8 +217,7 @@ class _RoleManagementDialogState extends State<_RoleManagementDialog> {
                   ? Icons.radio_button_checked
                   : Icons.radio_button_off,
               size: 18,
-              color:
-                  active ? Color(r.colorValue) : AppColors.dim),
+              color: active ? Color(r.colorValue) : AppColors.dim),
           const SizedBox(width: 8),
           Text(r.label, style: const TextStyle(fontSize: 13)),
         ]),
@@ -228,8 +252,7 @@ class _RoleManagementDialogState extends State<_RoleManagementDialog> {
       onTap: () => _toggleExtra(r),
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: active
               ? AppColors.cyn.withValues(alpha: 0.08)
@@ -249,46 +272,10 @@ class _RoleManagementDialogState extends State<_RoleManagementDialog> {
               color: active ? AppColors.cyn : AppColors.dim),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(r.label,
-                style: const TextStyle(fontSize: 13)),
+            child: Text(r.label, style: const TextStyle(fontSize: 13)),
           ),
         ]),
       ),
     );
   }
-}
-
-/// Запрашивает права у AppDatabase, открывает диалог и сохраняет изменения.
-/// Возвращает true, если роли были изменены.
-Future<bool> showAndSaveRoles({
-  required BuildContext context,
-  required AppDatabase db,
-  required Employee currentUser,
-  required Employee targetEmployee,
-}) async {
-  // 1. Запрашиваем права (в будущем — API запрос)
-  final perms = db.getRoleAssignmentPermissions(
-    currentUser: currentUser,
-    targetEmployee: targetEmployee,
-  );
-
-  // 2. Если прав нет — молча выходим или показываем снек (лучше обработать в UI)
-  if (perms.availablePrimaryRoles.isEmpty && perms.availableExtraRoles.isEmpty) {
-    return false;
-  }
-
-  // 3. Открываем диалог
-  final result = await showRoleManagementDialog(
-    context: context,
-    employee: targetEmployee,
-    selectableRoles: perms.canChangePrimary ? perms.availablePrimaryRoles : const [],
-    selectableExtras: perms.availableExtraRoles,
-    canChangePrimary: perms.canChangePrimary,
-  );
-
-  if (result == null) return false;
-
-  // 4. Сохраняем
-  db.setRoles(targetEmployee, result.primary, result.extras);
-  return true;
 }
