@@ -696,62 +696,85 @@ class AppDatabase extends ChangeNotifier {
     return true;
   }
 
-  /// Меняет роли сотрудника (основную + дополнительные), ведёт историю.
-  ///
-  /// Если сотрудник становится админом парка и у него уже есть parkId —
-  /// подчиняет ему операторов и техников этого парка.
-  void setRoles(Employee e, EmployeeRole primary, List<EmployeeRole> extras) {
-    final now = DateTime.now();
-    final oldPrimary = e.role;
-    final oldExtras = List<EmployeeRole>.from(e.additionalRoles);
+ /// Меняет роли сотрудника (основную + дополнительные), ведёт историю.
+///
+/// При понижении с parkAdmin — отвязывает операторов/техников парка.
+/// При понижении с regionalAdmin — отвязывает операторов/техников региона.
+/// При повышении до parkAdmin с уже известным parkId — подчиняет парк.
+void setRoles(Employee e, EmployeeRole primary, List<EmployeeRole> extras) {
+  final now = DateTime.now();
+  final oldPrimary = e.role;
+  final oldExtras = List<EmployeeRole>.from(e.additionalRoles);
 
-    if (oldPrimary != primary) {
-      _closeCurrentHistory(
-          e, 'Смена основной роли: ${oldPrimary.label} → ${primary.label}');
+  if (oldPrimary != primary) {
+    _closeCurrentHistory(
+        e, 'Смена основной роли: ${oldPrimary.label} → ${primary.label}');
+    e.history.add(RoleHistoryEntry(
+      id: 'h${DateTime.now().microsecondsSinceEpoch}',
+      role: primary,
+      parkId: e.parkId,
+      regionId: e.regionId,
+      startedAt: now,
+    ));
+  }
+
+  e.role = primary;
+  e.additionalRoles = List.from(extras);
+
+  for (final r in extras) {
+    if (!oldExtras.contains(r)) {
       e.history.add(RoleHistoryEntry(
-        id: 'h${DateTime.now().microsecondsSinceEpoch}',
-        role: primary,
+        id: 'h${DateTime.now().microsecondsSinceEpoch}_${r.name}',
+        role: r,
         parkId: e.parkId,
         regionId: e.regionId,
         startedAt: now,
+        reason: 'Добавлена дополнительная роль',
       ));
     }
+  }
 
-    e.role = primary;
-    e.additionalRoles = List.from(extras);
-
-    for (final r in extras) {
-      if (!oldExtras.contains(r)) {
-        e.history.add(RoleHistoryEntry(
-          id: 'h${DateTime.now().microsecondsSinceEpoch}_${r.name}',
-          role: r,
-          parkId: e.parkId,
-          regionId: e.regionId,
-          startedAt: now,
-          reason: 'Добавлена дополнительная роль',
-        ));
-      }
-    }
-
-    for (final r in oldExtras) {
-      if (!extras.contains(r) && r != primary) {
-        for (final h in e.history) {
-          if (h.isCurrent && h.role == r) {
-            h.endedAt = now;
-            h.reason = 'Снята дополнительная роль';
-          }
+  for (final r in oldExtras) {
+    if (!extras.contains(r) && r != primary) {
+      for (final h in e.history) {
+        if (h.isCurrent && h.role == r) {
+          h.endedAt = now;
+          h.reason = 'Снята дополнительная роль';
         }
       }
     }
-
-    // Если стал parkAdmin с уже известным parkId — подчинить парк
-    if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
-      final park = parkById(e.parkId!);
-      if (park != null) _subordinateParkStaffTo(e, park);
-    }
-
-    save();
   }
+
+  // Понижение с parkAdmin — отвязываем парк и подчинённых
+  if (oldPrimary == EmployeeRole.parkAdmin &&
+      primary != EmployeeRole.parkAdmin) {
+    final oldParkId = e.parkId;
+    if (oldParkId != null) {
+      final oldPark = parkById(oldParkId);
+      if (oldPark != null) _detachFromParkStaff(e, oldPark);
+      e.parkId = null;
+    }
+  }
+
+  // Понижение с regionalAdmin — отвязываем регион и подчинённых
+  if (oldPrimary == EmployeeRole.regionalAdmin &&
+      primary != EmployeeRole.regionalAdmin) {
+    final oldRegionId = e.regionId;
+    if (oldRegionId != null) {
+      final oldRegion = regionById(oldRegionId);
+      if (oldRegion != null) _detachFromRegionStaff(e, oldRegion);
+      e.regionId = null;
+    }
+  }
+
+  // Стал parkAdmin с известным parkId — подчинить парк
+  if (e.role == EmployeeRole.parkAdmin && e.parkId != null) {
+    final park = parkById(e.parkId!);
+    if (park != null) _subordinateParkStaffTo(e, park);
+  }
+
+  save();
+}
 
   /// Переводит сотрудника в парк.
   ///
