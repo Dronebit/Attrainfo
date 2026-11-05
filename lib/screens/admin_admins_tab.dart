@@ -963,10 +963,12 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       return true;
     }).toList();
 
+    // Свободен = ни региона, ни парка
     final free = all
         .where((a) => a.regionId == null && a.parkId == null)
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
+    // Занят = есть регион или парк
     final busy = all
         .where((a) => a.regionId != null || a.parkId != null)
         .toList()
@@ -1072,9 +1074,15 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       return true;
     }).toList();
 
-    final free = all.where((a) => a.parkId == null).toList()
+    // Свободен для парка = нет парка И нет региона.
+    // Рег. админ с регионом — занят (перевод с подтверждением).
+    final free = all
+        .where((a) => a.parkId == null && a.regionId == null)
+        .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
-    final busy = all.where((a) => a.parkId != null).toList()
+    final busy = all
+        .where((a) => a.parkId != null || a.regionId != null)
+        .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
     await showDialog<void>(
@@ -1103,9 +1111,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                   const _SectionLabel('СВОБОДНЫЕ'),
                   ...free.map((a) => _candidateTile(
                         a,
-                        subtitle: a.role == EmployeeRole.regionalAdmin
-                            ? 'Свободен · рег. админ → станет админом парка'
-                            : 'Свободен',
+                        subtitle: 'Свободен · ${a.role.label}',
                         onTap: () async {
                           db.assignAdminToPark(a, park,
                               reason: 'Назначен из списка');
