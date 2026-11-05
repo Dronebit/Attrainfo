@@ -397,10 +397,25 @@ class AppDatabase extends ChangeNotifier {
 
   // ═══════════ назначение / снятие админов ═══════════
 
+  /// Назначает сотрудника администратором парка.
+  ///
+  /// Если переезжает из другого парка:
+  /// - отвязывает от старого парка;
+  /// - если старый парк остался без активных админов — возвращает
+  ///   его операторов/техников под рег.админа региона (или super).
   void assignAdminToPark(Employee admin, Park park, {String? reason}) {
     final now = DateTime.now();
+    final oldParkId = admin.parkId;
 
     _closeCurrentHistory(admin, reason ?? 'Назначен администратором');
+
+    // Если переезжает из другого парка — отвязать от старого
+    if (oldParkId != null && oldParkId != park.id) {
+      final oldPark = parkById(oldParkId);
+      if (oldPark != null) {
+        _detachFromParkStaff(admin, oldPark);
+      }
+    }
 
     admin.history.add(RoleHistoryEntry(
       id: 'h${DateTime.now().microsecondsSinceEpoch}',
@@ -417,6 +432,17 @@ class AppDatabase extends ChangeNotifier {
 
     final loc = locById(park.locId);
     if (loc != null) admin.lastCityId = loc.cityId;
+
+    // Если старый парк остался без админа — вернуть под рег.админа
+    if (oldParkId != null &&
+        oldParkId != park.id &&
+        parkAdminsOf(oldParkId).isEmpty) {
+      for (final reg in regionsOfPark(oldParkId)) {
+        for (final ra in regionalAdminsOf(reg.id)) {
+          _subordinateOrphanParkStaff(ra, reg);
+        }
+      }
+    }
 
     _autoAssignManager(admin, park);
     _subordinateParkStaffTo(admin, park);
