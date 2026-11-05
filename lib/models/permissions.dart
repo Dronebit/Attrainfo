@@ -1,3 +1,5 @@
+import 'employee.dart';
+
 class RoleAssignmentPermissions {
   final bool canChangePrimary;
   final List<EmployeeRole> availablePrimaryRoles;
