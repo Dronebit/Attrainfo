@@ -217,25 +217,59 @@ class AppDatabase extends ChangeNotifier {
   // ═══════════ права на изменение ролей ═══════════
 
   RoleAssignmentPermissions getRoleAssignmentPermissions({
-    required Employee currentUser,
-    required Employee targetEmployee,
-  }) {
-    const noPermissions = RoleAssignmentPermissions(
-      canChangePrimary: false,
-      availablePrimaryRoles: [],
-      availableExtraRoles: [],
-    );
+  required Employee currentUser,
+  required Employee targetEmployee,
+}) {
+  const noPermissions = RoleAssignmentPermissions(
+    canChangePrimary: false,
+    availablePrimaryRoles: [],
+    availableExtraRoles: [],
+  );
 
-    if (targetEmployee.role == EmployeeRole.superAdmin) {
-      return noPermissions;
+  // 0. Нельзя менять роли самому себе (защита от самопонижения/повышения).
+  // Себя может редактировать только superAdmin, но и ему это обычно не нужно.
+  if (currentUser.id == targetEmployee.id) {
+    return noPermissions;
+  }
+
+  if (targetEmployee.role == EmployeeRole.superAdmin) {
+    return noPermissions;
+  }
+
+  // 1. Владелец может всё (кроме superAdmin)
+  if (currentUser.role == EmployeeRole.superAdmin) {
+    return const RoleAssignmentPermissions(
+      canChangePrimary: true,
+      availablePrimaryRoles: [
+        EmployeeRole.regionalAdmin,
+        EmployeeRole.parkAdmin,
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+      availableExtraRoles: [
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+    );
+  }
+
+  // 2. Региональный админ — может менять роли подчинённым в своём регионе
+  if (currentUser.role == EmployeeRole.regionalAdmin) {
+    bool inRegion = targetEmployee.regionId == currentUser.regionId;
+    if (!inRegion && targetEmployee.parkId != null) {
+      inRegion = regionsOfPark(targetEmployee.parkId!)
+          .any((r) => r.id == currentUser.regionId);
+    }
+    if (!inRegion && targetEmployee.hasRole(EmployeeRole.operator)) {
+      inRegion = approvedParkIdsForOperator(targetEmployee.id)
+          .any((pid) => regionsOfPark(pid)
+              .any((r) => r.id == currentUser.regionId));
     }
 
-    // 1. Владелец может всё (кроме superAdmin)
-    if (currentUser.role == EmployeeRole.superAdmin) {
+    if (inRegion) {
       return const RoleAssignmentPermissions(
         canChangePrimary: true,
         availablePrimaryRoles: [
-          EmployeeRole.regionalAdmin,
           EmployeeRole.parkAdmin,
           EmployeeRole.operator,
           EmployeeRole.technician,
@@ -246,62 +280,34 @@ class AppDatabase extends ChangeNotifier {
         ],
       );
     }
-
-    // 2. Региональный админ — может менять роли подчинённым в своём регионе
-    if (currentUser.role == EmployeeRole.regionalAdmin) {
-      bool inRegion = targetEmployee.regionId == currentUser.regionId;
-      if (!inRegion && targetEmployee.parkId != null) {
-        inRegion = regionsOfPark(targetEmployee.parkId!)
-            .any((r) => r.id == currentUser.regionId);
-      }
-      if (!inRegion && targetEmployee.hasRole(EmployeeRole.operator)) {
-        inRegion = approvedParkIdsForOperator(targetEmployee.id)
-            .any((pid) => regionsOfPark(pid)
-                .any((r) => r.id == currentUser.regionId));
-      }
-
-      if (inRegion) {
-        return const RoleAssignmentPermissions(
-          canChangePrimary: true, // Разрешаем менять основную роль
-          availablePrimaryRoles: [
-            EmployeeRole.parkAdmin, // Может сделать админом парка
-            EmployeeRole.operator,  // Может разжаловать в оператора
-            EmployeeRole.technician,// Или в механика
-          ],
-          availableExtraRoles: [
-            EmployeeRole.operator,
-            EmployeeRole.technician,
-          ],
-        );
-      }
-    }
-
-    // 3. Админ парка — может менять доп. роли и переключать оператор/механик
-    if (currentUser.role == EmployeeRole.parkAdmin &&
-        currentUser.parkId != null) {
-      bool inPark = targetEmployee.parkId == currentUser.parkId;
-      if (!inPark && targetEmployee.hasRole(EmployeeRole.operator)) {
-        inPark = approvedParkIdsForOperator(targetEmployee.id)
-            .contains(currentUser.parkId);
-      }
-
-      if (inPark) {
-        return const RoleAssignmentPermissions(
-          canChangePrimary: true, // Разрешаем менять основную роль (но без parkAdmin!)
-          availablePrimaryRoles: [
-            EmployeeRole.operator,
-            EmployeeRole.technician,
-          ],
-          availableExtraRoles: [
-            EmployeeRole.operator,
-            EmployeeRole.technician,
-          ],
-        );
-      }
-    }
-
-    return noPermissions;
   }
+
+  // 3. Админ парка — может менять роли подчинённым в своём парке
+  if (currentUser.role == EmployeeRole.parkAdmin &&
+      currentUser.parkId != null) {
+    bool inPark = targetEmployee.parkId == currentUser.parkId;
+    if (!inPark && targetEmployee.hasRole(EmployeeRole.operator)) {
+      inPark = approvedParkIdsForOperator(targetEmployee.id)
+          .contains(currentUser.parkId);
+    }
+
+    if (inPark) {
+      return const RoleAssignmentPermissions(
+        canChangePrimary: true,
+        availablePrimaryRoles: [
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+        availableExtraRoles: [
+          EmployeeRole.operator,
+          EmployeeRole.technician,
+        ],
+      );
+    }
+  }
+
+  return noPermissions;
+}
 
   // ═══════════ нормализация и хелперы ═══════════
 
