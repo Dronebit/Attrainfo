@@ -6,7 +6,6 @@ import '../theme.dart';
 
 enum WorkplaceChangeType { park, region }
 
-/// Результат диалога смены места работы.
 class WorkplacePickResult {
   final String? parkId;
   final String? regionId;
@@ -14,14 +13,6 @@ class WorkplacePickResult {
   const WorkplacePickResult.region(String this.regionId) : parkId = null;
 }
 
-/// Открывает диалог выбора нового места работы.
-///
-/// [type]:
-/// - `WorkplaceChangeType.park` — выбор парка (через город).
-/// - `WorkplaceChangeType.region` — выбор региона.
-/// - `null` — по роли сотрудника: `regionalAdmin` → регион, иначе → парк.
-///
-/// Возвращает `WorkplacePickResult?` (null — отмена).
 Future<WorkplacePickResult?> showWorkplaceChangeDialog({
   required BuildContext context,
   required AppDatabase db,
@@ -38,8 +29,6 @@ Future<WorkplacePickResult?> showWorkplaceChangeDialog({
   }
   return _pickPark(context, db, employee);
 }
-
-// ═══════════ Выбор парка (через город) ═══════════
 
 Future<WorkplacePickResult?> _pickPark(
   BuildContext context,
@@ -67,8 +56,8 @@ Future<WorkplacePickResult?> _pickPark(
       final l = db.locById(p.locId);
       initialCityId = l?.cityId;
     }
-  } else if (employee.lastCityId != null) {
-    initialCityId = employee.lastCityId;
+  } else if (employee.cityId != null) {
+    initialCityId = employee.cityId;
   }
 
   String? cityId = initialCityId ?? cities.first.id;
@@ -156,8 +145,6 @@ Future<WorkplacePickResult?> _pickPark(
   if (result == null) return null;
   return WorkplacePickResult.park(result);
 }
-
-// ═══════════ Выбор региона ═══════════
 
 Future<WorkplacePickResult?> _pickRegion(
   BuildContext context,
