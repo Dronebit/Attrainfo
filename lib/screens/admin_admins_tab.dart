@@ -23,7 +23,8 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   final Set<String> _collapsedRegions = {};
   final Set<String> _collapsedParks = {};
   bool _superCollapsed = false;
-  bool _freeCollapsed = false;
+  bool _freeParkCollapsed = false;
+  bool _freeRegionCollapsed = false;
 
   String _uid() => 'x${DateTime.now().microsecondsSinceEpoch}';
 
@@ -40,7 +41,10 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
         if (me.role == EmployeeRole.superAdmin) ..._superSection(),
         ..._regionsSection(),
         if (me.role == EmployeeRole.superAdmin) _unassignedParksSection(),
-        if (me.role == EmployeeRole.superAdmin) _freeAdminsSection(),
+        if (me.role == EmployeeRole.superAdmin) ...[
+          _freeParkAdminsSection(),
+          _freeRegionalAdminsSection(),
+        ],
       ],
     );
   }
@@ -367,16 +371,14 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
     );
   }
 
-  // ═══════════ Свободные админы ═══════════
+  // ═══════════ Свободные админы парков ═══════════
 
-  Widget _freeAdminsSection() {
+  Widget _freeParkAdminsSection() {
     final free = db.employees.where((a) {
       if (a.status != EmployeeStatus.active) return false;
-      if (a.role != EmployeeRole.regionalAdmin &&
-          a.role != EmployeeRole.parkAdmin) {
-        return false;
-      }
-      return a.regionId == null && a.parkId == null;
+      if (a.role != EmployeeRole.parkAdmin) return false;
+      if (a.parkId != null) return false;
+      return true;
     }).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
 
@@ -394,25 +396,25 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             InkWell(
-              onTap: () =>
-                  setState(() => _freeCollapsed = !_freeCollapsed),
+              onTap: () => setState(
+                  () => _freeParkCollapsed = !_freeParkCollapsed),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(14)),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                 child: Row(children: [
                   Icon(
-                      _freeCollapsed
+                      _freeParkCollapsed
                           ? Icons.chevron_right
                           : Icons.expand_more,
                       size: 16,
                       color: AppColors.mut),
                   const SizedBox(width: 4),
                   const Icon(Icons.person_off,
-                      size: 13, color: AppColors.org),
+                      size: 13, color: AppColors.grn),
                   const SizedBox(width: 6),
                   const Expanded(
-                    child: Text('Свободные админы',
+                    child: Text('Свободные админы парков',
                         style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700)),
@@ -421,7 +423,74 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                 ]),
               ),
             ),
-            if (!_freeCollapsed) ...[
+            if (!_freeParkCollapsed) ...[
+              const Divider(height: 1, color: AppColors.line),
+              Padding(
+                padding: const EdgeInsets.all(6),
+                child: Column(
+                  children: free.map((a) => _adminRow(a)).toList(),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ═══════════ Свободные рег. админы ═══════════
+
+  Widget _freeRegionalAdminsSection() {
+    final free = db.employees.where((a) {
+      if (a.status != EmployeeStatus.active) return false;
+      if (a.role != EmployeeRole.regionalAdmin) return false;
+      if (a.regionId != null) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+    if (free.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.panel,
+          border: Border.all(color: AppColors.line),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: () => setState(
+                  () => _freeRegionCollapsed = !_freeRegionCollapsed),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Row(children: [
+                  Icon(
+                      _freeRegionCollapsed
+                          ? Icons.chevron_right
+                          : Icons.expand_more,
+                      size: 16,
+                      color: AppColors.mut),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.person_off,
+                      size: 13, color: AppColors.cyn),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text('Свободные рег. админы',
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                  _countBadge(free.length),
+                ]),
+              ),
+            ),
+            if (!_freeRegionCollapsed) ...[
               const Divider(height: 1, color: AppColors.line),
               Padding(
                 padding: const EdgeInsets.all(6),
@@ -847,7 +916,6 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   // ═══════════ Назначение: регион ═══════════
 
   Future<void> _pickAdminForRegion(Region region) async {
-    // Кандидаты: parkAdmin или regionalAdmin, active, не в этом регионе.
     final all = db.employees.where((a) {
       if (a.status != EmployeeStatus.active) return false;
       if (a.role != EmployeeRole.regionalAdmin &&
@@ -958,8 +1026,6 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   // ═══════════ Назначение: парк ═══════════
 
   Future<void> _pickAdminForPark(Park park) async {
-    // Кандидаты: parkAdmin или regionalAdmin (если без парка), active,
-    // не в этом парке.
     final all = db.employees.where((a) {
       if (a.status != EmployeeStatus.active) return false;
       if (a.role != EmployeeRole.parkAdmin &&
