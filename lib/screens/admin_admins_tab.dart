@@ -436,6 +436,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       if (!_showFired && a.status != EmployeeStatus.active) return false;
       if (a.role != EmployeeRole.parkAdmin) return false;
       if (a.parkId != null) return false;
+      if (a.regionId != null) return false;
       return true;
     }).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
@@ -568,6 +569,16 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   Widget _adminRow(Employee e) {
     final statusColor = Color(e.status.colorValue);
     final isFired = e.status == EmployeeStatus.fired;
+
+    // Все роли (основная + доп.) — полным названием через запятую.
+    final rolesLine =
+        e.allRoles.map((r) => r.fullLabel).join(', ');
+    final subtitle = isFired
+        ? '$rolesLine · ${e.status.label}'
+        : (e.status != EmployeeStatus.active
+            ? '$rolesLine · ${e.status.label}'
+            : rolesLine);
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
@@ -616,7 +627,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                   Text(
-                    'PIN ${e.pin} · ${e.role.label}${e.status != EmployeeStatus.active ? " · ${e.status.label}" : ""}',
+                    subtitle,
                     style: TextStyle(
                         fontSize: 10,
                         color: isFired
@@ -698,7 +709,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                         style: const TextStyle(
                             fontSize: 17, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
-                    Text(current.role.label,
+                    Text(current.role.fullLabel,
                         style: const TextStyle(
                             fontSize: 11.5, color: AppColors.dim)),
                   ],
@@ -721,7 +732,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                       _infoLine(
                           'Доп. роли',
                           current.additionalRoles
-                              .map((r) => r.label)
+                              .map((r) => r.fullLabel)
                               .join(', ')),
                     if (region != null) _infoLine('Регион', region.name),
                     if (park != null) _infoLine('Парк', park.name),
@@ -862,29 +873,29 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
   }
 
   Future<void> _manageRoles(Employee admin, StateSetter setS) async {
-  // SuperAdmin (владелец) может менять основную роль.
-  // RegionalAdmin — только дополнительные.
-  final isOwner = me.role == EmployeeRole.superAdmin;
+    // SuperAdmin (владелец) может менять основную роль.
+    // RegionalAdmin — только дополнительные.
+    final isOwner = me.role == EmployeeRole.superAdmin;
 
-  final result = await showRoleManagementDialog(
-    context: context,
-    employee: admin,
-    selectableRoles: const [
-      EmployeeRole.parkAdmin,
-      EmployeeRole.regionalAdmin,
-    ],
-    selectableExtras: const [
-      EmployeeRole.operator,
-      EmployeeRole.technician,
-    ],
-    canChangePrimary: isOwner,
-  );
-  if (result == null) return;
-  db.setRoles(admin, result.primary, result.extras);
-  setS(() {});
-  setState(() {});
-  _snack('Роли обновлены');
-}
+    final result = await showRoleManagementDialog(
+      context: context,
+      employee: admin,
+      selectableRoles: const [
+        EmployeeRole.parkAdmin,
+        EmployeeRole.regionalAdmin,
+      ],
+      selectableExtras: const [
+        EmployeeRole.operator,
+        EmployeeRole.technician,
+      ],
+      canChangePrimary: isOwner,
+    );
+    if (result == null) return;
+    db.setRoles(admin, result.primary, result.extras);
+    setS(() {});
+    setState(() {});
+    _snack('Роли обновлены');
+  }
 
   Widget _infoLine(String label, String value,
       {bool mono = false, Color? color}) {
@@ -967,12 +978,10 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       return true;
     }).toList();
 
-    // Свободен = ни региона, ни парка
     final free = all
         .where((a) => a.regionId == null && a.parkId == null)
         .toList()
       ..sort((a, b) => a.name.compareTo(b.name));
-    // Занят = есть регион или парк
     final busy = all
         .where((a) => a.regionId != null || a.parkId != null)
         .toList()
@@ -1004,7 +1013,8 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                   const _SectionLabel('СВОБОДНЫЕ'),
                   ...free.map((a) => _candidateTile(
                         a,
-                        subtitle: 'Свободен · ${a.role.label}',
+                        subtitle:
+                            'Свободен · ${a.role.fullLabel}',
                         onTap: () async {
                           db.assignRegionalAdmin(a, region,
                               reason: 'Назначен из списка');
@@ -1078,8 +1088,6 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       return true;
     }).toList();
 
-    // Свободен для парка = нет парка И нет региона.
-    // Рег. админ с регионом — занят (перевод с подтверждением).
     final free = all
         .where((a) => a.parkId == null && a.regionId == null)
         .toList()
@@ -1115,7 +1123,8 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
                   const _SectionLabel('СВОБОДНЫЕ'),
                   ...free.map((a) => _candidateTile(
                         a,
-                        subtitle: 'Свободен · ${a.role.label}',
+                        subtitle:
+                            'Свободен · ${a.role.fullLabel}',
                         onTap: () async {
                           db.assignAdminToPark(a, park,
                               reason: 'Назначен из списка');
@@ -1410,7 +1419,7 @@ class _AdminAdminsTabState extends State<AdminAdminsTab> {
       name: name,
       phone: phone,
       pin: pin,
-      role: EmployeeRole.operator, // временная, перезапишется
+      role: EmployeeRole.operator,
       managerId: me.id,
       createdAt: now,
       history: [],
