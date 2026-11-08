@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../data/app_database.dart';
 import '../theme.dart';
 import 'admin_panel_screen.dart';
 import 'dashboard_screen.dart';
@@ -10,6 +9,7 @@ import 'infrastructure_screen.dart';
 import 'operator_screen.dart';
 import 'operators_screen.dart';
 import 'technicians_screen.dart';
+import 'warehouse/warehouse_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -27,6 +27,7 @@ class _HomeShellState extends State<HomeShell> {
     _TabDef('Структура', Icons.account_tree_outlined, Icons.account_tree),
     _TabDef('Механики', Icons.build_outlined, Icons.build),
     _TabDef('Смена', Icons.play_circle_outline, Icons.play_circle),
+    _TabDef('Склад', Icons.inventory_2_outlined, Icons.inventory_2),
   ];
 
   @override
@@ -54,6 +55,7 @@ class _HomeShellState extends State<HomeShell> {
             _ScrollablePage(child: InfrastructureScreen()),
             _ScrollablePage(child: TechniciansScreen()),
             _ScrollablePage(child: OperatorScreen()),
+            _ScrollablePage(child: WarehouseScreen()),
           ],
         ),
       ),
@@ -104,12 +106,12 @@ class _HomeDrawer extends StatelessWidget {
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          DrawerHeader(
-            decoration: const BoxDecoration(color: AppColors.panel),
+          const DrawerHeader(
+            decoration: BoxDecoration(color: AppColors.panel),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
-              children: const [
+              children: [
                 Text('АттраКонтроль',
                     style: TextStyle(
                         fontSize: 20, fontWeight: FontWeight.w700)),
@@ -139,6 +141,16 @@ class _HomeDrawer extends StatelessWidget {
             },
           ),
           const Divider(),
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: const Text('Склад ТМЦ'),
+            subtitle: const Text('Позиции, остатки, операции'),
+            onTap: () {
+              Navigator.pop(context);
+              _push(context, 'Склад ТМЦ', const WarehouseScreen(),
+                  scroll: true);
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.timer_outlined),
             title: const Text('Простои'),
