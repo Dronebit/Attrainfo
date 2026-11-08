@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../data/app_database.dart';
+import '../../models/employee.dart';
 import '../../models/inventory.dart';
 import '../../theme.dart';
+import 'scanner_sheet.dart';
 
 // ═══════════════════════════════════════════════════════════════════
-// КОРНЕВОЙ ЭКРАН — 3 вкладки
+// КОРНЕВОЙ ЭКРАН — 4 вкладки (Главная / Позиции / Локации / Операции)
 // ═══════════════════════════════════════════════════════════════════
 
 class WarehouseScreen extends StatefulWidget {
-  const WarehouseScreen({super.key});
+  final Employee? currentUser;
+  const WarehouseScreen({super.key, this.currentUser});
   @override
   State<WarehouseScreen> createState() => _WarehouseScreenState();
 }
@@ -21,7 +24,7 @@ class _WarehouseScreenState extends State<WarehouseScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
+    _tab = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -42,9 +45,11 @@ class _WarehouseScreenState extends State<WarehouseScreen>
             indicatorColor: AppColors.amb,
             labelColor: AppColors.amb2,
             unselectedLabelColor: AppColors.mut,
+            isScrollable: true,
             labelStyle:
                 const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             tabs: const [
+              Tab(text: 'Главная'),
               Tab(text: 'Позиции'),
               Tab(text: 'Локации'),
               Tab(text: 'Операции'),
@@ -54,10 +59,14 @@ class _WarehouseScreenState extends State<WarehouseScreen>
         Expanded(
           child: TabBarView(
             controller: _tab,
-            children: const [
-              _ItemsTab(),
-              _LocationsTab(),
-              _TransactionsTab(),
+            children: [
+              _HomeTab(
+                currentUser: widget.currentUser,
+                onGoToTab: (i) => _tab.animateTo(i),
+              ),
+              _ItemsTab(currentUser: widget.currentUser),
+              const _LocationsTab(),
+              const _TransactionsTab(),
             ],
           ),
         ),
@@ -67,11 +76,841 @@ class _WarehouseScreenState extends State<WarehouseScreen>
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ВКЛАДКА 0 — ГЛАВНАЯ (для механика)
+// ═══════════════════════════════════════════════════════════════════
+
+class _HomeTab extends StatefulWidget {
+  final Employee? currentUser;
+  final void Function(int index) onGoToTab;
+  const _HomeTab({required this.currentUser, required this.onGoToTab});
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  String? _selectedParkId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedParkId = widget.currentUser?.parkId;
+  }
+
+  List<InventoryItem> _belowMinInPark(AppDatabase db) {
+    final locIds = db.storageLocations
+        .where((l) =>
+            _selectedParkId == null || l.parkId == _selectedParkId)
+        .map((l) => l.id)
+        .toSet();
+    return db.inventoryItems.where((it) {
+      double total = 0;
+      for (final t in db.stockTransactions) {
+        if (t.itemId != it.id) continue;
+        if (t.toLocationId != null && locIds.contains(t.toLocationId)) {
+          total += t.quantity;
+        }
+        if (t.fromLocationId != null &&
+            locIds.contains(t.fromLocationId)) {
+          total -= t.quantity;
+        }
+      }
+      return total < it.minQuantity;
+    }).toList();
+  }
+
+  List<StockTransaction> _myTransactions(AppDatabase db) {
+    final uid = widget.currentUser?.id;
+    final list = uid == null
+        ? db.stockTransactions
+        : db.stockTransactions.where((t) => t.authorId == uid).toList();
+    return (list.toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt)))
+        .take(5)
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final db = context.watch<AppDatabase>();
+    final park =
+        _selectedParkId == null ? null : db.parkById(_selectedParkId);
+    final belowMin = _belowMinInPark(db);
+    final myTx = _myTransactions(db);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _header(db, park),
+        const SizedBox(height: 12),
+        _employeeCard(),
+        const SizedBox(height: 16),
+        _scanButton(db),
+        const SizedBox(height: 16),
+        if (belowMin.isNotEmpty) ...[
+          _alertsBlock(db, belowMin),
+          const SizedBox(height: 16),
+        ],
+        _quickActions(db),
+        const SizedBox(height: 16),
+        _myTransactionsBlock(db, myTx),
+      ]),
+    );
+  }
+
+  Widget _header(AppDatabase db, Park? park) {
+    return Row(children: [
+      Expanded(
+        child: InkWell(
+          onTap: widget.currentUser?.parkId == null
+              ? () => _pickPark(db)
+              : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(children: [
+              const Icon(Icons.park_outlined,
+                  size: 16, color: AppColors.cyn),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  park?.name ?? 'Все парки',
+                  style: const TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (widget.currentUser?.parkId == null) ...[
+                const SizedBox(width: 4),
+                const Icon(Icons.expand_more,
+                    size: 16, color: AppColors.mut),
+              ],
+            ]),
+          ),
+        ),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.panel2,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: AppColors.line2),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+              width: 6,
+              height: 6,
+              decoration: const BoxDecoration(
+                  color: AppColors.grn, shape: BoxShape.circle)),
+          const SizedBox(width: 5),
+          const Text('Офлайн',
+              style: TextStyle(fontSize: 10.5, color: AppColors.mut)),
+        ]),
+      ),
+    ]);
+  }
+
+  Future<void> _pickPark(AppDatabase db) async {
+    final picked = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Выбор парка'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, '__all__'),
+            child: const Text('Все парки'),
+          ),
+          for (final p in db.parks)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, p.id),
+              child: Text(p.name),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || picked == null) return;
+    setState(() => _selectedParkId = picked == '__all__' ? null : picked);
+  }
+
+  Widget _employeeCard() {
+    final user = widget.currentUser;
+    if (user == null) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: _cardDeco,
+        child: const Row(children: [
+          Icon(Icons.person_outline, size: 20, color: AppColors.mut),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Гость',
+                    style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700)),
+                Text('Полный доступ · без личных блоков',
+                    style: TextStyle(fontSize: 11, color: AppColors.dim)),
+              ],
+            ),
+          ),
+        ]),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDeco,
+      child: Row(children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Color(user.role.colorValue).withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Center(
+            child: Text(
+              _initials(user.name),
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(user.role.colorValue)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(user.name,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700)),
+              Text(
+                '${user.role.fullLabel}'
+                '${user.jobTitle != null ? " · ${user.jobTitle}" : ""}',
+                style: const TextStyle(fontSize: 11, color: AppColors.dim),
+              ),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+
+  String _initials(String name) {
+    final p = name.trim().split(RegExp(r'\s+'));
+    if (p.isEmpty) return '?';
+    if (p.length == 1) return p[0].substring(0, 1).toUpperCase();
+    return (p[0].substring(0, 1) + p[1].substring(0, 1)).toUpperCase();
+  }
+
+  Widget _scanButton(AppDatabase db) {
+    return InkWell(
+      onTap: () => _onScan(db),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+              colors: [AppColors.amb, Color(0xFFFF9A3D)]),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Column(children: [
+          Icon(Icons.qr_code_scanner,
+              size: 42, color: Color(0xFF1C1204)),
+          SizedBox(height: 10),
+          Text('СКАНИРОВАТЬ QR',
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: Color(0xFF1C1204))),
+          SizedBox(height: 4),
+          Text('ячейка · верстак · деталь',
+              style:
+                  TextStyle(fontSize: 11, color: Color(0xCC1C1204))),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _onScan(AppDatabase db) async {
+    final result = await showScannerSheet(context);
+    if (result == null || !mounted) return;
+
+    StorageLocation? loc;
+    InventoryItem? item;
+
+    if (result.kind == ScanKind.location) {
+      final m = db.storageLocations
+          .where((l) => l.code.toLowerCase() == result.code.toLowerCase())
+          .toList();
+      loc = m.isEmpty ? null : m.first;
+    } else if (result.kind == ScanKind.item) {
+      final m = db.inventoryItems
+          .where((i) => i.sku.toLowerCase() == result.code.toLowerCase())
+          .toList();
+      item = m.isEmpty ? null : m.first;
+    } else {
+      final lm = db.storageLocations
+          .where((l) => l.code.toLowerCase() == result.code.toLowerCase())
+          .toList();
+      if (lm.isNotEmpty) {
+        loc = lm.first;
+      } else {
+        final im = db.inventoryItems
+            .where((i) => i.sku.toLowerCase() == result.code.toLowerCase())
+            .toList();
+        item = im.isEmpty ? null : im.first;
+      }
+    }
+
+    if (loc != null) {
+      _showShelfCard(db, loc);
+      return;
+    }
+    if (item != null) {
+      _showItemCard(db, item);
+      return;
+    }
+    _snack('Код «${result.code}» не найден');
+  }
+
+  void _showShelfCard(AppDatabase db, StorageLocation loc) {
+    final items = db.itemsAtLocation(loc.id);
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: AppColors.panel,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SingleChildScrollView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  const Icon(Icons.inventory_2_outlined,
+                      size: 26, color: AppColors.amb),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(loc.code,
+                            style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'monospace')),
+                        if (loc.name.isNotEmpty)
+                          Text(loc.name,
+                              style: const TextStyle(
+                                  fontSize: 11.5, color: AppColors.dim)),
+                      ],
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 16),
+                _sectionTitle('ПОЗИЦИИ'),
+                const SizedBox(height: 6),
+                if (items.isEmpty)
+                  const Text('Пусто',
+                      style:
+                          TextStyle(fontSize: 12, color: AppColors.dim))
+                else
+                  for (final it in items) _shelfItemRow(db, loc, it),
+                const SizedBox(height: 16),
+                _sectionTitle('ДЕЙСТВИЯ'),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  _actionBtn(
+                    icon: Icons.add,
+                    label: 'Приход',
+                    color: AppColors.grn,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _pickItemThenTransaction(db,
+                          StockTransactionType.income,
+                          prefilledLocation: loc);
+                    },
+                  ),
+                  _actionBtn(
+                    icon: Icons.remove,
+                    label: 'Выдача',
+                    color: AppColors.amb,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _pickItemThenTransaction(db,
+                          StockTransactionType.outcome,
+                          prefilledLocation: loc);
+                    },
+                  ),
+                  _actionBtn(
+                    icon: Icons.delete_outline,
+                    label: 'Списать',
+                    color: AppColors.red,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _pickItemThenTransaction(db,
+                          StockTransactionType.writeOff,
+                          prefilledLocation: loc);
+                    },
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _shelfItemRow(
+      AppDatabase db, StorageLocation loc, InventoryItem it) {
+    final qty = db.stockAt(it.id, loc.id);
+    final belowMin = qty < it.minQuantity;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E1420),
+        borderRadius: BorderRadius.circular(8),
+        border: belowMin
+            ? Border.all(color: AppColors.red.withValues(alpha: 0.3))
+            : null,
+      ),
+      child: Row(children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(it.name,
+                  style: const TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis),
+              Text('${it.sku} · мин ${_num(it.minQuantity.toDouble())}',
+                  style: const TextStyle(
+                      fontSize: 10, color: AppColors.dim)),
+            ],
+          ),
+        ),
+        Text('${_num(qty)} ${it.unit.label}',
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+                color: belowMin ? AppColors.red : AppColors.txt)),
+      ]),
+    );
+  }
+
+  void _showItemCard(AppDatabase db, InventoryItem it) {
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: AppColors.panel,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SingleChildScrollView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: _categoryColor(it.category)
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(_categoryIcon(it.category),
+                        size: 24, color: _categoryColor(it.category)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(it.name,
+                            style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700)),
+                        Text('${it.sku} · ${it.category.label}',
+                            style: const TextStyle(
+                                fontSize: 11, color: AppColors.dim)),
+                      ],
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 16),
+                _kv('Всего',
+                    '${_num(db.stockTotal(it.id))} ${it.unit.label}',
+                    bold: true),
+                _kv('Минимум', _num(it.minQuantity.toDouble())),
+                const SizedBox(height: 12),
+                _sectionTitle('ПО ЛОКАЦИЯМ'),
+                const SizedBox(height: 6),
+                if (db.stockByLocation(it.id).isEmpty)
+                  const Text('Нет остатков',
+                      style:
+                          TextStyle(fontSize: 12, color: AppColors.dim))
+                else
+                  for (final e in db.stockByLocation(it.id).entries)
+                    _locationRow(db, e.key, e.value, it),
+                const SizedBox(height: 16),
+                _sectionTitle('ДЕЙСТВИЯ'),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  _actionBtn(
+                    icon: Icons.add,
+                    label: 'Приход',
+                    color: AppColors.grn,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openTransactionDialog(context, db, it,
+                          StockTransactionType.income,
+                          authorId: widget.currentUser?.id);
+                    },
+                  ),
+                  _actionBtn(
+                    icon: Icons.remove,
+                    label: 'Выдача',
+                    color: AppColors.amb,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openTransactionDialog(context, db, it,
+                          StockTransactionType.outcome,
+                          authorId: widget.currentUser?.id);
+                    },
+                  ),
+                  _actionBtn(
+                    icon: Icons.delete_outline,
+                    label: 'Списать',
+                    color: AppColors.red,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openTransactionDialog(context, db, it,
+                          StockTransactionType.writeOff,
+                          authorId: widget.currentUser?.id);
+                    },
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _alertsBlock(AppDatabase db, List<InventoryItem> belowMin) {
+    return InkWell(
+      onTap: () => widget.onGoToTab(1),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.red.withValues(alpha: 0.06),
+          border: Border.all(color: AppColors.red.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.warning_amber_rounded,
+                  size: 16, color: AppColors.red),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${belowMin.length} ${_plural(belowMin.length, "позиция", "позиции", "позиций")} ниже минимума',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.red),
+                ),
+              ),
+              const Icon(Icons.chevron_right,
+                  size: 18, color: AppColors.red),
+            ]),
+            const SizedBox(height: 6),
+            for (final it in belowMin.take(3))
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text('· ${it.name}',
+                    style: const TextStyle(
+                        fontSize: 11.5, color: AppColors.txt),
+                    overflow: TextOverflow.ellipsis),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _plural(int n, String one, String few, String many) {
+    final m10 = n % 10;
+    final m100 = n % 100;
+    if (m10 == 1 && m100 != 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+  }
+
+  Widget _quickActions(AppDatabase db) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle('БЫСТРАЯ ОПЕРАЦИЯ'),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            child: _quickBtn(
+              icon: Icons.add_circle_outline,
+              label: 'Приход',
+              color: AppColors.grn,
+              onTap: () =>
+                  _pickItemThenTransaction(db, StockTransactionType.income),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _quickBtn(
+              icon: Icons.remove_circle_outline,
+              label: 'Выдача',
+              color: AppColors.amb,
+              onTap: () => _pickItemThenTransaction(
+                  db, StockTransactionType.outcome),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            child: _quickBtn(
+              icon: Icons.delete_outline,
+              label: 'Списать',
+              color: AppColors.red,
+              onTap: () => _pickItemThenTransaction(
+                  db, StockTransactionType.writeOff),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _quickBtn(
+              icon: Icons.swap_horiz,
+              label: 'Переместить',
+              color: AppColors.cyn,
+              onTap: () => _pickItemThenTransaction(
+                  db, StockTransactionType.transfer),
+            ),
+          ),
+        ]),
+      ],
+    );
+  }
+
+  Widget _quickBtn({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: color)),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _pickItemThenTransaction(
+    AppDatabase db,
+    StockTransactionType type, {
+    StorageLocation? prefilledLocation,
+  }) async {
+    if (db.inventoryItems.isEmpty) {
+      _snack('Сначала создайте хотя бы одну позицию');
+      return;
+    }
+    final item = await showDialog<InventoryItem>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('Выберите позицию'),
+        content: SizedBox(
+          width: 440,
+          height: 400,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: db.inventoryItems.length,
+            itemBuilder: (_, i) {
+              final it = db.inventoryItems[i];
+              return ListTile(
+                title: Text(it.name,
+                    style: const TextStyle(fontSize: 13)),
+                subtitle: Text('${it.sku} · ${it.category.label}',
+                    style: const TextStyle(fontSize: 10.5)),
+                onTap: () => Navigator.pop(ctx, it),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Отмена')),
+        ],
+      ),
+    );
+    if (item == null || !mounted) return;
+    _openTransactionDialog(context, db, item, type,
+        prefilledLocation: prefilledLocation,
+        authorId: widget.currentUser?.id);
+  }
+
+  Widget _myTransactionsBlock(
+      AppDatabase db, List<StockTransaction> myTx) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(children: [
+          Expanded(
+              child: _sectionTitle(widget.currentUser == null
+                  ? 'ПОСЛЕДНИЕ ОПЕРАЦИИ'
+                  : 'МОИ ПОСЛЕДНИЕ ОПЕРАЦИИ')),
+          TextButton(
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 26),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => widget.onGoToTab(3),
+            child:
+                const Text('Все →', style: TextStyle(fontSize: 11.5)),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        if (myTx.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: _cardDeco,
+            child: const Center(
+              child: Text('Операций пока нет',
+                  style: TextStyle(fontSize: 12, color: AppColors.dim)),
+            ),
+          )
+        else
+          for (final t in myTx) _txRowCompact(db, t),
+      ],
+    );
+  }
+
+  Widget _txRowCompact(AppDatabase db, StockTransaction t) {
+    final item = db.itemById(t.itemId);
+    final color = _txColorOf(t.type);
+    final date = t.createdAt;
+    final dateStr = '${date.hour.toString().padLeft(2, '0')}:'
+        '${date.minute.toString().padLeft(2, '0')}';
+    final sign = switch (t.type) {
+      StockTransactionType.income => '+',
+      StockTransactionType.outcome => '−',
+      StockTransactionType.writeOff => '−',
+      StockTransactionType.transfer => '↔',
+      StockTransactionType.inventory => '±',
+    };
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(children: [
+        Text(sign,
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: color,
+                fontFamily: 'monospace')),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(item?.name ?? '—',
+                  style: const TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis),
+              Text('${t.type.label} · ${item?.sku ?? ''}',
+                  style: const TextStyle(
+                      fontSize: 10, color: AppColors.dim)),
+            ],
+          ),
+        ),
+        Text(dateStr,
+            style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.mut,
+                fontFamily: 'monospace')),
+      ]),
+    );
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ВКЛАДКА 1 — ПОЗИЦИИ
 // ═══════════════════════════════════════════════════════════════════
 
 class _ItemsTab extends StatefulWidget {
-  const _ItemsTab();
+  final Employee? currentUser;
+  const _ItemsTab({this.currentUser});
   @override
   State<_ItemsTab> createState() => _ItemsTabState();
 }
@@ -286,8 +1125,7 @@ class _ItemsTabState extends State<_ItemsTab> {
         })
         .take(3)
         .join(' · ');
-    final more =
-        locations.length > 3 ? ' +${locations.length - 3}' : '';
+    final more = locations.length > 3 ? ' +${locations.length - 3}' : '';
 
     return InkWell(
       onTap: () => _showItemCard(db, it),
@@ -482,8 +1320,7 @@ class _ItemsTabState extends State<_ItemsTab> {
                               fontSize: 12, color: AppColors.dim))
                     else
                       for (final e in db.stockByLocation(it.id).entries)
-                        _locationRow(db, e.key, e.value, it,
-                            onTapShelf: true),
+                        _locationRow(db, e.key, e.value, it),
                     const SizedBox(height: 16),
                     _sectionTitle('ПОСЛЕДНИЕ ОПЕРАЦИИ'),
                     const SizedBox(height: 6),
@@ -493,7 +1330,7 @@ class _ItemsTabState extends State<_ItemsTab> {
                               fontSize: 12, color: AppColors.dim))
                     else
                       for (final t in db.transactionsForItem(it.id).take(10))
-                        _txRow(t, item: it, db: db),
+                        _txRow(t),
                     const SizedBox(height: 16),
                     _sectionTitle('ДЕЙСТВИЯ'),
                     const SizedBox(height: 6),
@@ -504,8 +1341,9 @@ class _ItemsTabState extends State<_ItemsTab> {
                         color: AppColors.grn,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openTransactionDialog(
-                              context, db, it, StockTransactionType.income);
+                          _openTransactionDialog(context, db, it,
+                              StockTransactionType.income,
+                              authorId: widget.currentUser?.id);
                         },
                       ),
                       _actionBtn(
@@ -514,8 +1352,9 @@ class _ItemsTabState extends State<_ItemsTab> {
                         color: AppColors.amb,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openTransactionDialog(
-                              context, db, it, StockTransactionType.outcome);
+                          _openTransactionDialog(context, db, it,
+                              StockTransactionType.outcome,
+                              authorId: widget.currentUser?.id);
                         },
                       ),
                       _actionBtn(
@@ -524,8 +1363,9 @@ class _ItemsTabState extends State<_ItemsTab> {
                         color: AppColors.red,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openTransactionDialog(
-                              context, db, it, StockTransactionType.writeOff);
+                          _openTransactionDialog(context, db, it,
+                              StockTransactionType.writeOff,
+                              authorId: widget.currentUser?.id);
                         },
                       ),
                       _actionBtn(
@@ -534,8 +1374,9 @@ class _ItemsTabState extends State<_ItemsTab> {
                         color: AppColors.cyn,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openTransactionDialog(
-                              context, db, it, StockTransactionType.transfer);
+                          _openTransactionDialog(context, db, it,
+                              StockTransactionType.transfer,
+                              authorId: widget.currentUser?.id);
                         },
                       ),
                       _actionBtn(
@@ -545,7 +1386,8 @@ class _ItemsTabState extends State<_ItemsTab> {
                         onTap: () {
                           Navigator.pop(ctx);
                           _openTransactionDialog(context, db, it,
-                              StockTransactionType.inventory);
+                              StockTransactionType.inventory,
+                              authorId: widget.currentUser?.id);
                         },
                       ),
                     ]),
@@ -935,12 +1777,8 @@ class _LocationsTabState extends State<_LocationsTab> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Row(children: [
-                Icon(
-                    collapsed
-                        ? Icons.chevron_right
-                        : Icons.expand_more,
-                    size: 18,
-                    color: AppColors.mut),
+                Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
+                    size: 18, color: AppColors.mut),
                 const SizedBox(width: 6),
                 const Icon(Icons.park_outlined,
                     size: 15, color: AppColors.cyn),
@@ -1127,8 +1965,8 @@ class _LocationsTabState extends State<_LocationsTab> {
                         color: AppColors.amb,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openShelfTransaction(
-                              context, db, loc, StockTransactionType.outcome);
+                          _openShelfTransaction(context, db, loc,
+                              StockTransactionType.outcome);
                         },
                       ),
                       _actionBtn(
@@ -1236,8 +2074,7 @@ class _LocationsTabState extends State<_LocationsTab> {
                 DropdownButtonFormField<String?>(
                   initialValue: parkId,
                   isExpanded: true,
-                  decoration:
-                      const InputDecoration(labelText: 'Парк'),
+                  decoration: const InputDecoration(labelText: 'Парк'),
                   items: [
                     const DropdownMenuItem<String?>(
                         value: null, child: Text('— без парка —')),
@@ -1278,8 +2115,8 @@ class _LocationsTabState extends State<_LocationsTab> {
       (x) =>
           x.code.toLowerCase() == code.toLowerCase() &&
           x.id != editing?.id,
-      orElse: () => StorageLocation(
-          id: '', parkId: parkId, code: '', name: ''),
+      orElse: () =>
+          StorageLocation(id: '', parkId: parkId, code: '', name: ''),
     );
     if (conflict.id.isNotEmpty) {
       _snack('Код «$code» уже используется');
@@ -1356,22 +2193,20 @@ class _LocationsTabState extends State<_LocationsTab> {
         title: const Text('Выберите позицию'),
         content: SizedBox(
           width: 440,
-          child: SizedBox(
-            height: 400,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: db.inventoryItems.length,
-              itemBuilder: (_, i) {
-                final it = db.inventoryItems[i];
-                return ListTile(
-                  title: Text(it.name,
-                      style: const TextStyle(fontSize: 13)),
-                  subtitle: Text('${it.sku} · ${it.category.label}',
-                      style: const TextStyle(fontSize: 10.5)),
-                  onTap: () => Navigator.pop(ctx, it),
-                );
-              },
-            ),
+          height: 400,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: db.inventoryItems.length,
+            itemBuilder: (_, i) {
+              final it = db.inventoryItems[i];
+              return ListTile(
+                title:
+                    Text(it.name, style: const TextStyle(fontSize: 13)),
+                subtitle: Text('${it.sku} · ${it.category.label}',
+                    style: const TextStyle(fontSize: 10.5)),
+                onTap: () => Navigator.pop(ctx, it),
+              );
+            },
           ),
         ),
         actions: [
@@ -1400,7 +2235,7 @@ class _LocationsTabState extends State<_LocationsTab> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ВКЛАДКА 3 — ОПЕРАЦИИ (полная история)
+// ВКЛАДКА 3 — ОПЕРАЦИИ
 // ═══════════════════════════════════════════════════════════════════
 
 class _TransactionsTab extends StatefulWidget {
@@ -1505,9 +2340,8 @@ class _TransactionsTabState extends State<_TransactionsTab> {
           _emptyState(
             icon: Icons.receipt_long_outlined,
             title: 'Операций нет',
-            subtitle: all.isEmpty
-                ? 'Проведите первую транзакцию'
-                : 'Измените фильтры',
+            subtitle:
+                all.isEmpty ? 'Проведите первую транзакцию' : 'Измените фильтры',
           )
         else
           for (final t in filtered) _txCard(db, t),
@@ -1517,7 +2351,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
 
   Widget _txCard(AppDatabase db, StockTransaction t) {
     final item = db.itemById(t.itemId);
-    final color = _txColor(t.type);
+    final color = _txColorOf(t.type);
     final date = t.createdAt;
     final dateStr =
         '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year} '
@@ -1584,30 +2418,20 @@ class _TransactionsTabState extends State<_TransactionsTab> {
         const SizedBox(height: 6),
         Align(
           alignment: Alignment.centerRight,
-          child: Text(
-            '${_num(t.quantity)} ${item?.unit.label ?? ''}',
-            style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'monospace',
-                color: color),
-          ),
+          child: Text('${_num(t.quantity)} ${item?.unit.label ?? ''}',
+              style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
+                  color: color)),
         ),
       ]),
     );
   }
-
-  Color _txColor(StockTransactionType t) => switch (t) {
-        StockTransactionType.income => AppColors.grn,
-        StockTransactionType.outcome => AppColors.amb,
-        StockTransactionType.writeOff => AppColors.red,
-        StockTransactionType.transfer => AppColors.cyn,
-        StockTransactionType.inventory => AppColors.pur,
-      };
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ДИАЛОГ ТРАНЗАКЦИИ (общий, расширен для transfer/inventory)
+// ДИАЛОГ ТРАНЗАКЦИИ
 // ═══════════════════════════════════════════════════════════════════
 
 Future<void> _openTransactionDialog(
@@ -1616,11 +2440,11 @@ Future<void> _openTransactionDialog(
   InventoryItem item,
   StockTransactionType type, {
   StorageLocation? prefilledLocation,
+  String? authorId,
 }) async {
-  // Для inventory — двухшаговый: показываем учётный остаток,
-  // пользователь вводит факт.
   if (type == StockTransactionType.inventory) {
-    return _openInventoryDialog(context, db, item, prefilledLocation);
+    return _openInventoryDialog(context, db, item, prefilledLocation,
+        authorId: authorId);
   }
 
   final qtyCtrl = TextEditingController(text: '1');
@@ -1694,8 +2518,8 @@ Future<void> _openTransactionDialog(
                 TextField(
                   controller: qtyCtrl,
                   autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
                     labelText: 'Количество (${item.unit.label})',
                   ),
@@ -1713,12 +2537,12 @@ Future<void> _openTransactionDialog(
                       for (final r in db.rides)
                         DropdownMenuItem(
                           value: r.id,
-                          child: Text(r.name,
-                              overflow: TextOverflow.ellipsis),
+                          child:
+                              Text(r.name, overflow: TextOverflow.ellipsis),
                         ),
                     ],
-                    onChanged: (v) => setS(() =>
-                        rideId = (v == null || v.isEmpty) ? null : v),
+                    onChanged: (v) =>
+                        setS(() => rideId = (v == null || v.isEmpty) ? null : v),
                   ),
                 if (type == StockTransactionType.outcome)
                   const SizedBox(height: 12),
@@ -1785,6 +2609,7 @@ Future<void> _openTransactionDialog(
         : (type == StockTransactionType.transfer ? toLocationId : null),
     quantity: qty,
     rideId: rideId,
+    authorId: authorId,
     comment: commentCtrl.text.trim().isEmpty
         ? null
         : commentCtrl.text.trim(),
@@ -1802,8 +2627,9 @@ Future<void> _openInventoryDialog(
   BuildContext context,
   AppDatabase db,
   InventoryItem item,
-  StorageLocation? prefilled,
-) async {
+  StorageLocation? prefilled, {
+  String? authorId,
+}) async {
   final locs =
       prefilled != null ? [prefilled] : db.locationsOfItem(item.id);
   if (locs.isEmpty) {
@@ -1917,6 +2743,7 @@ Future<void> _openInventoryDialog(
     itemId: item.id,
     toLocationId: locId,
     quantity: diff,
+    authorId: authorId,
     comment:
         'Инвентаризация: учёт ${_num(system)}, факт ${_num(fact)}, разница ${diff > 0 ? "+" : ""}${_num(diff)}',
   );
@@ -1925,8 +2752,7 @@ Future<void> _openInventoryDialog(
     _snackIn(context, err);
     return;
   }
-  _snackIn(
-      context,
+  _snackIn(context,
       'Скорректировано на ${diff > 0 ? "+" : ""}${_num(diff)} ${item.unit.label}');
 }
 
@@ -1973,7 +2799,7 @@ void _snackIn(BuildContext ctx, String msg) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ОБЩИЕ UI-ХЕЛПЕРЫ (используются всеми вкладками)
+// ОБЩИЕ UI-ХЕЛПЕРЫ
 // ═══════════════════════════════════════════════════════════════════
 
 Widget _sectionTitle(String t) => Text(t,
@@ -1999,7 +2825,7 @@ Widget _kv(String k, String v, {bool bold = false}) => Padding(
     );
 
 Widget _locationRow(AppDatabase db, String locId, double qty,
-    InventoryItem it, {bool onTapShelf = false}) {
+    InventoryItem it) {
   final loc = db.locationById(locId);
   final park = loc?.parkId == null ? null : db.parkById(loc!.parkId);
   return Container(
@@ -2038,19 +2864,13 @@ Widget _locationRow(AppDatabase db, String locId, double qty,
   );
 }
 
-Widget _txRow(StockTransaction t, {InventoryItem? item, AppDatabase? db}) {
+Widget _txRow(StockTransaction t) {
   final date = t.createdAt;
   final dateStr = '${date.day.toString().padLeft(2, '0')}.'
       '${date.month.toString().padLeft(2, '0')} '
       '${date.hour.toString().padLeft(2, '0')}:'
       '${date.minute.toString().padLeft(2, '0')}';
-  final color = switch (t.type) {
-    StockTransactionType.income => AppColors.grn,
-    StockTransactionType.outcome => AppColors.amb,
-    StockTransactionType.writeOff => AppColors.red,
-    StockTransactionType.transfer => AppColors.cyn,
-    StockTransactionType.inventory => AppColors.pur,
-  };
+  final color = _txColorOf(t.type);
   final sign = switch (t.type) {
     StockTransactionType.income => '+',
     StockTransactionType.outcome => '−',
@@ -2093,6 +2913,14 @@ Widget _txRow(StockTransaction t, {InventoryItem? item, AppDatabase? db}) {
     ]),
   );
 }
+
+Color _txColorOf(StockTransactionType t) => switch (t) {
+      StockTransactionType.income => AppColors.grn,
+      StockTransactionType.outcome => AppColors.amb,
+      StockTransactionType.writeOff => AppColors.red,
+      StockTransactionType.transfer => AppColors.cyn,
+      StockTransactionType.inventory => AppColors.pur,
+    };
 
 String _num(double v) {
   if (v == v.roundToDouble()) return v.toInt().toString();
@@ -2297,8 +3125,8 @@ class _Kpi extends StatelessWidget {
                       color: AppColors.mut,
                       fontWeight: FontWeight.w500)),
               Text(sub,
-                  style: const TextStyle(
-                      fontSize: 10.5, color: AppColors.dim)),
+                  style:
+                      const TextStyle(fontSize: 10.5, color: AppColors.dim)),
             ],
           ),
         ),
