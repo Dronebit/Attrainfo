@@ -252,7 +252,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
       MobileScanner(
         controller: _ctrl,
         onDetect: _onDetect,
-        errorBuilder: (context, error) {
+        errorBuilder: (context, error,child) {
           DebugLog.instance.error(
               'MobileScanner.error: ${error.errorCode} — ${error.errorDetails?.message ?? ""}');
           return _errorPanelWith(error);
