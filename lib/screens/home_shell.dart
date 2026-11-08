@@ -33,6 +33,7 @@ class _HomeShellState extends State<HomeShell> {
     ('Сотрудники', 'Управление операторами · бейджи · PIN', Icons.badge_outlined),
     ('Консоль', 'Отладочные логи · NFC-тест', Icons.bug_report_outlined),
     ('Админ-панель', 'Регионы · парки · администраторы', Icons.shield_outlined),
+    ('Склад', 'ТМЦ · остатки · выдача', Icons.inventory_2_outlined),
   ];
 
   @override
@@ -47,6 +48,7 @@ class _HomeShellState extends State<HomeShell> {
       OperatorsScreen(),
       DebugConsoleScreen(),
       AdminPanelScreen(),
+      WarehouseScreen(),
     ];
 
     final isWide = MediaQuery.of(context).size.width >= 900;
