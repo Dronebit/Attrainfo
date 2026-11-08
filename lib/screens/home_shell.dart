@@ -1,352 +1,177 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../models/enums.dart';
-import '../models/models.dart';
-import '../models/employee.dart';
-import '../models/permissions.dart';
-import '../models/operator_park_link.dart';
-import '../models/shift_vacancy.dart';
-import '../models/shift.dart';
-import '../models/region.dart';
-import '../models/inventory.dart';
-import 'seed.dart';
+import 'package:flutter/material.dart';
+import '../data/app_database.dart';
+import '../theme.dart';
+import 'admin_panel_screen.dart';
+import 'dashboard_screen.dart';
+import 'debug_console_screen.dart';
+import 'downtime_screen.dart';
+import 'incidents_screen.dart';
+import 'infrastructure_screen.dart';
+import 'operator_screen.dart';
+import 'operators_screen.dart';
+import 'technicians_screen.dart';
 
-part 'parts/part_employees.dart';
-part 'parts/part_operations.dart';
-part 'parts/part_org_structure.dart';
-part 'parts/part_inventory.dart';
+class HomeShell extends StatefulWidget {
+  const HomeShell({super.key});
 
-class AppDatabase extends ChangeNotifier {
-  static const _key = 'attrakontrol-v8';
-  static const _oldKey = 'attrakontrol-v7';
-  static const _legacyKey = 'attrakontrol-v6';
-  static const _ancientKey = 'attrakontrol-v5';
-  static const masterPin = '9999';
+  @override
+  State<HomeShell> createState() => _HomeShellState();
+}
 
-  // ═══════════ state ═══════════
+class _HomeShellState extends State<HomeShell> {
+  int _index = 0;
 
-  // ─── Орг. структура ───
-  List<City> cities = [];
-  List<ParkLocation> locations = [];
-  List<Park> parks = [];
-  List<Region> regions = [];
+  static const _tabs = <_TabDef>[
+    _TabDef('Дашборд', Icons.dashboard_outlined, Icons.dashboard),
+    _TabDef('События', Icons.warning_amber_outlined, Icons.warning_amber),
+    _TabDef('Структура', Icons.account_tree_outlined, Icons.account_tree),
+    _TabDef('Механики', Icons.build_outlined, Icons.build),
+    _TabDef('Смена', Icons.play_circle_outline, Icons.play_circle),
+  ];
 
-  // ─── Аттракционы и события ───
-  List<Ride> rides = [];
-  List<Downtime> downtimes = [];
-  List<Incident> incidents = [];
-
-  // ─── Сотрудники и управление ───
-  List<Employee> employees = [];
-  List<OperatorParkLink> operatorLinks = [];
-  List<ShiftVacancy> vacancies = [];
-  List<VacancyApplication> applications = [];
-
-  // ─── Смена оператора ───
-  Shift? activeShift;
-  bool opSelectingRides = false;
-  String? currentParkId;
-
-  // ─── Склад ТМЦ ───
-  List<InventoryItem> inventoryItems = [];
-  List<StorageLocation> storageLocations = [];
-  List<StockTransaction> stockTransactions = [];
-
-  // ═══════════ методы с notifyListeners ═══════════
-
-  // (нельзя выносить в extension, так как notifyListeners - protected)
-  void setOpSelectingRides(bool v) {
-    opSelectingRides = v;
-    notifyListeners();
-  }
-
-  // ═══════════ save / load / reset ═══════════
-
-  Future<void> save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        _key,
-        jsonEncode({
-          'cities': cities.map((e) => e.toJson()).toList(),
-          'locations': locations.map((e) => e.toJson()).toList(),
-          'parks': parks.map((e) => e.toJson()).toList(),
-          'regions': regions.map((e) => e.toJson()).toList(),
-          'rides': rides.map((e) => e.toJson()).toList(),
-          'downtimes': downtimes.map((e) => e.toJson()).toList(),
-          'incidents': incidents.map((e) => e.toJson()).toList(),
-          'employees': employees.map((e) => e.toJson()).toList(),
-          'operatorLinks': operatorLinks.map((e) => e.toJson()).toList(),
-          'vacancies': vacancies.map((e) => e.toJson()).toList(),
-          'applications': applications.map((e) => e.toJson()).toList(),
-          'inventoryItems': inventoryItems.map((e) => e.toJson()).toList(),
-          'storageLocations':
-              storageLocations.map((e) => e.toJson()).toList(),
-          'stockTransactions':
-              stockTransactions.map((e) => e.toJson()).toList(),
-          'activeShift': activeShift?.toJson(),
-          'opSelectingRides': opSelectingRides,
-          'currentParkId': currentParkId,
-        }));
-    notifyListeners();
-  }
-
-  Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final v8Raw = prefs.getString(_key);
-    if (v8Raw != null) {
-      try {
-        _applyV6(jsonDecode(v8Raw));
-        _backfillManagers();
-        notifyListeners();
-        return;
-      } catch (e) {
-        debugPrint('Failed to load v8: $e');
-      }
-    }
-
-    final v7Raw = prefs.getString(_oldKey);
-    if (v7Raw != null) {
-      try {
-        _applyV6(jsonDecode(v7Raw));
-        _backfillManagers();
-        await save();
-        notifyListeners();
-        return;
-      } catch (e) {
-        debugPrint('Failed to migrate v7: $e');
-      }
-    }
-
-    final v6Raw = prefs.getString(_legacyKey);
-    if (v6Raw != null) {
-      try {
-        _applyV6(jsonDecode(v6Raw));
-        _backfillManagers();
-        await save();
-        notifyListeners();
-        return;
-      } catch (e) {
-        debugPrint('Failed to migrate v6: $e');
-      }
-    }
-
-    final v5Raw = prefs.getString(_ancientKey);
-    if (v5Raw != null) {
-      try {
-        _applyV5AndMigrate(jsonDecode(v5Raw));
-        _backfillManagers();
-        await save();
-        notifyListeners();
-        return;
-      } catch (e) {
-        debugPrint('Failed to migrate v5: $e');
-      }
-    }
-
-    _applyV6(_seedJson());
-    if (employees.isEmpty) {
-      _applyV6(_seedJson());
-    }
-    _backfillManagers();
-    await save();
-    notifyListeners();
-  }
-
-  Future<void> resetToSeed() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
-    await prefs.remove(_oldKey);
-    await prefs.remove(_legacyKey);
-    await prefs.remove(_ancientKey);
-    _applyV6(_seedJson());
-    _backfillManagers();
-    activeShift = null;
-    opSelectingRides = false;
-    currentParkId = null;
-    await save();
-  }
-
-  // ═══════════ seed / migrate ═══════════
-
-  Map<String, dynamic> _seedJson() {
-    final s = buildSeed();
-    return {
-      'cities': _safeList(s['cities'], (e) => (e as City).toJson()),
-      'locations':
-          _safeList(s['locations'], (e) => (e as ParkLocation).toJson()),
-      'parks': _safeList(s['parks'], (e) => (e as Park).toJson()),
-      'regions': _safeList(s['regions'], (e) => (e as Region).toJson()),
-      'rides': _safeList(s['rides'], (e) => (e as Ride).toJson()),
-      'downtimes':
-          _safeList(s['downtimes'], (e) => (e as Downtime).toJson()),
-      'incidents':
-          _safeList(s['incidents'], (e) => (e as Incident).toJson()),
-      'employees':
-          _safeList(s['employees'], (e) => (e as Employee).toJson()),
-      'operatorLinks': _safeList(
-          s['operatorLinks'], (e) => (e as OperatorParkLink).toJson()),
-      'vacancies':
-          _safeList(s['vacancies'], (e) => (e as ShiftVacancy).toJson()),
-      'applications': _safeList(
-          s['applications'], (e) => (e as VacancyApplication).toJson()),
-      'inventoryItems': _safeList(
-          s['inventoryItems'], (e) => (e as InventoryItem).toJson()),
-      'storageLocations': _safeList(
-          s['storageLocations'], (e) => (e as StorageLocation).toJson()),
-      'stockTransactions': _safeList(
-          s['stockTransactions'], (e) => (e as StockTransaction).toJson()),
-    };
-  }
-
-  static List<Map<String, dynamic>> _safeList(
-    dynamic raw,
-    Map<String, dynamic> Function(Object?) mapper,
-  ) {
-    if (raw is! List) return [];
-    return raw.map(mapper).toList();
-  }
-
-  void _applyV6(Map<String, dynamic> j) {
-    cities =
-        (j['cities'] as List?)?.map((e) => City.fromJson(e)).toList() ?? [];
-    locations = (j['locations'] as List?)
-            ?.map((e) => ParkLocation.fromJson(e))
-            .toList() ??
-        [];
-    parks =
-        (j['parks'] as List?)?.map((e) => Park.fromJson(e)).toList() ?? [];
-    regions =
-        (j['regions'] as List?)?.map((e) => Region.fromJson(e)).toList() ??
-            [];
-    rides =
-        (j['rides'] as List?)?.map((e) => Ride.fromJson(e)).toList() ?? [];
-    downtimes = (j['downtimes'] as List?)
-            ?.map((e) => Downtime.fromJson(e))
-            .toList() ??
-        [];
-    incidents = (j['incidents'] as List?)
-            ?.map((e) => Incident.fromJson(e))
-            .toList() ??
-        [];
-    employees = (j['employees'] as List?)
-            ?.map((e) => Employee.fromJson(e))
-            .toList() ??
-        [];
-    operatorLinks = (j['operatorLinks'] as List?)
-            ?.map((e) => OperatorParkLink.fromJson(e))
-            .toList() ??
-        [];
-    vacancies = (j['vacancies'] as List?)
-            ?.map((e) => ShiftVacancy.fromJson(e))
-            .toList() ??
-        [];
-    applications = (j['applications'] as List?)
-            ?.map((e) => VacancyApplication.fromJson(e))
-            .toList() ??
-        [];
-    inventoryItems = (j['inventoryItems'] as List?)
-            ?.map((e) => InventoryItem.fromJson(e))
-            .toList() ??
-        [];
-    storageLocations = (j['storageLocations'] as List?)
-            ?.map((e) => StorageLocation.fromJson(e))
-            .toList() ??
-        [];
-    stockTransactions = (j['stockTransactions'] as List?)
-            ?.map((e) => StockTransaction.fromJson(e))
-            .toList() ??
-        [];
-
-    final sh = j['activeShift'];
-    activeShift = sh is Map<String, dynamic> ? Shift.fromJson(sh) : null;
-    opSelectingRides = j['opSelectingRides'] ?? false;
-    currentParkId = j['currentParkId'];
-  }
-
-  void _applyV5AndMigrate(Map<String, dynamic> j) {
-    cities =
-        (j['cities'] as List?)?.map((e) => City.fromJson(e)).toList() ?? [];
-    locations = (j['locations'] as List?)
-            ?.map((e) => ParkLocation.fromJson(e))
-            .toList() ??
-        [];
-    parks =
-        (j['parks'] as List?)?.map((e) => Park.fromJson(e)).toList() ?? [];
-    regions =
-        (j['regions'] as List?)?.map((e) => Region.fromJson(e)).toList() ??
-            [];
-    rides =
-        (j['rides'] as List?)?.map((e) => Ride.fromJson(e)).toList() ?? [];
-    downtimes = (j['downtimes'] as List?)
-            ?.map((e) => Downtime.fromJson(e))
-            .toList() ??
-        [];
-    incidents = (j['incidents'] as List?)
-            ?.map((e) => Incident.fromJson(e))
-            .toList() ??
-        [];
-    operatorLinks = (j['operatorLinks'] as List?)
-            ?.map((e) => OperatorParkLink.fromJson(e))
-            .toList() ??
-        [];
-    vacancies = (j['vacancies'] as List?)
-            ?.map((e) => ShiftVacancy.fromJson(e))
-            .toList() ??
-        [];
-    applications = (j['applications'] as List?)
-            ?.map((e) => VacancyApplication.fromJson(e))
-            .toList() ??
-        [];
-
-    final emps = <Employee>[];
-    final oldOperators = j['operators'] as List?;
-    if (oldOperators != null) {
-      for (final o in oldOperators) {
-        try {
-          emps.add(Employee.fromOldOperator(
-              Map<String, dynamic>.from(o as Map)));
-        } catch (e) {
-          debugPrint('Failed to migrate operator: $e');
-        }
-      }
-    }
-    final oldAdmins = j['admins'] as List?;
-    if (oldAdmins != null) {
-      for (final a in oldAdmins) {
-        try {
-          emps.add(
-              Employee.fromOldAdmin(Map<String, dynamic>.from(a as Map)));
-        } catch (e) {
-          debugPrint('Failed to migrate admin: $e');
-        }
-      }
-    }
-    final oldTechs = j['techs'] as List?;
-    if (oldTechs != null) {
-      for (final t in oldTechs) {
-        try {
-          emps.add(Employee.fromOldTech(Map<String, dynamic>.from(t as Map)));
-        } catch (e) {
-          debugPrint('Failed to migrate tech: $e');
-        }
-      }
-    }
-    employees = emps;
-    final sh = j['activeShift'];
-    activeShift = sh is Map<String, dynamic> ? Shift.fromJson(sh) : null;
-    opSelectingRides = j['opSelectingRides'] ?? false;
-    currentParkId = j['currentParkId'];
-    debugPrint('Migration v5→v8: migrated ${emps.length} employees');
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_tabs[_index].title),
+        actions: [
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.menu),
+              tooltip: 'Меню',
+              onPressed: () => Scaffold.of(ctx).openDrawer(),
+            ),
+          ),
+        ],
+      ),
+      drawer: const _HomeDrawer(),
+      body: SafeArea(
+        child: IndexedStack(
+          index: _index,
+          children: const [
+            _ScrollablePage(child: DashboardScreen()),
+            _ScrollablePage(child: IncidentsScreen()),
+            _ScrollablePage(child: InfrastructureScreen()),
+            _ScrollablePage(child: TechniciansScreen()),
+            _ScrollablePage(child: OperatorScreen()),
+          ],
+        ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: [
+          for (final t in _tabs)
+            NavigationDestination(
+              icon: Icon(t.icon),
+              selectedIcon: Icon(t.selectedIcon),
+              label: t.title,
+            ),
+        ],
+      ),
+    );
   }
 }
 
-extension _FirstWhereOrNull<E> on List<E> {
-  E? firstWhereOrNull(bool Function(E) test) {
-    for (final e in this) {
-      if (test(e)) return e;
-    }
-    return null;
+class _TabDef {
+  final String title;
+  final IconData icon;
+  final IconData selectedIcon;
+  const _TabDef(this.title, this.icon, this.selectedIcon);
+}
+
+/// Обёртка для скроллящихся экранов: даёт padding и вертикальный скролл,
+/// потому что экраны — `Column` без собственного ScrollView.
+class _ScrollablePage extends StatelessWidget {
+  final Widget child;
+  const _ScrollablePage({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: child,
+    );
+  }
+}
+
+class _HomeDrawer extends StatelessWidget {
+  const _HomeDrawer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(color: AppColors.panel),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: const [
+                Text('АттраКонтроль',
+                    style: TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.w700)),
+                SizedBox(height: 4),
+                Text('Учёт простоев и событий',
+                    style: TextStyle(fontSize: 12, color: AppColors.dim)),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.admin_panel_settings),
+            title: const Text('Админ-панель'),
+            subtitle: const Text('Super / регион'),
+            onTap: () {
+              Navigator.pop(context);
+              _push(context, 'Админ-панель', const AdminPanelScreen());
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.support_agent),
+            title: const Text('Панель админа парка'),
+            subtitle: const Text('Операторы парка'),
+            onTap: () {
+              Navigator.pop(context);
+              _push(context, 'Админ парка', const OperatorsScreen(),
+                  scroll: true);
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('Простои'),
+            onTap: () {
+              Navigator.pop(context);
+              _push(context, 'Простои', const DowntimeScreen());
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.bug_report_outlined),
+            title: const Text('Логи'),
+            onTap: () {
+              Navigator.pop(context);
+              _push(context, 'Логи', const DebugConsoleScreen());
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _push(BuildContext context, String title, Widget screen,
+      {bool scroll = false}) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: Text(title)),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: scroll ? SingleChildScrollView(child: screen) : screen,
+          ),
+        ),
+      ),
+    ));
   }
 }
