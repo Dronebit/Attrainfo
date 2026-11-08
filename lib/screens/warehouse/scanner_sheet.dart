@@ -29,6 +29,10 @@ class _ScannerSheet extends StatefulWidget {
 
 class _ScannerSheetState extends State<_ScannerSheet> {
   bool _handled = false;
+  bool _isTorchOn = false;
+  
+  // Ключ для управления встроенной камерой (включая фонарик)
+  final GlobalKey<ReaderWidgetState> _readerKey = GlobalKey<ReaderWidgetState>();
 
   void _onScan(Code code) {
     if (_handled) return;
@@ -98,6 +102,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
+          // 1. Наш кастомный заголовок (шторка)
           Container(
             margin: const EdgeInsets.only(top: 8),
             width: 40,
@@ -110,13 +115,11 @@ class _ScannerSheetState extends State<_ScannerSheet> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(children: [
-              const Icon(Icons.qr_code_scanner,
-                  size: 20, color: AppColors.amb),
+              const Icon(Icons.qr_code_scanner, size: 20, color: AppColors.amb),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text('Сканирование',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
               IconButton(
                 icon: const Icon(Icons.close),
@@ -124,31 +127,33 @@ class _ScannerSheetState extends State<_ScannerSheet> {
               ),
             ]),
           ),
+          
+          // 2. Зона камеры с нашей кастомной рамкой
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Stack(
+                  alignment: Alignment.center,
                   children: [
-                    // Виджет из flutter_zxing
+                    // Сама камера (чистый видеопоток без UI ZXing)
                     ReaderWidget(
+                      key: _readerKey,
                       onScan: _onScan,
-                      showFlashlight: true,     // встроенная кнопка фонарика
-                      showGallery: false,       // не нужна галерея
-                      showToggleCamera: false,  // не переключаем камеру
-                      showScannerOverlay: false,   // выключили встроенную рамку, т.к. рисуем свою
-),
+                      showScannerOverlay: false, // выкл рамку ZXing
+                      showFlashlight: false,     // выкл кнопку ZXing
+                      showGallery: false,        // выкл галерею ZXing
+                      showToggleCamera: false,   // выкл переключение камеры
                     ),
-                    // Рамка по центру
-                    Center(
-                      child: Container(
-                        width: 250,
-                        height: 250,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: AppColors.amb, width: 3),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                    
+                    // Наша кастомная золотая рамка
+                    Container(
+                      width: 250,
+                      height: 250,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.amb, width: 3),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                   ],
@@ -156,22 +161,40 @@ class _ScannerSheetState extends State<_ScannerSheet> {
               ),
             ),
           ),
+
+          // 3. Наши кастомные кнопки внизу
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             child: Column(children: [
               const Text(
                 'Наведите на QR полки или позиции',
                 style: TextStyle(fontSize: 12, color: AppColors.mut),
               ),
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _manualInput,
-                  icon: const Icon(Icons.keyboard, size: 16),
-                  label: const Text('Ввести код вручную'),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      // Управляем вспышкой через GlobalKey
+                      setState(() => _isTorchOn = !_isTorchOn);
+                      _readerKey.currentState?.toggleTorch();
+                    },
+                    icon: Icon(
+                      _isTorchOn ? Icons.flashlight_on : Icons.flashlight_off,
+                      size: 16,
+                    ),
+                    label: Text(_isTorchOn ? 'Свет вкл' : 'Свет'),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _manualInput,
+                    icon: const Icon(Icons.keyboard, size: 16),
+                    label: const Text('Вручную'),
+                  ),
+                ),
+              ]),
             ]),
           ),
         ]),
