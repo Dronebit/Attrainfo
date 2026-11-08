@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../data/app_database.dart';
-import '../models/enums.dart';
-import '../models/models.dart';
-import '../theme.dart';
+import '../../data/app_database.dart';
+import '../../models/enums.dart';
+import '../../models/models.dart';
+import '../../theme.dart';
 
 class IncidentsScreen extends StatefulWidget {
   const IncidentsScreen({super.key});
