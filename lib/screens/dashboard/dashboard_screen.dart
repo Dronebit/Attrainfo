@@ -2,10 +2,10 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../data/app_database.dart';
-import '../models/enums.dart';
-import '../models/models.dart';
-import '../theme.dart';
+import '../../data/app_database.dart';
+import '../../models/enums.dart';
+import '../../models/models.dart';
+import '../../theme.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
