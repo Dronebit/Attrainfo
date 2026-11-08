@@ -11,6 +11,8 @@ import 'operator_screen.dart';
 import 'operators_screen.dart';
 import 'debug_console_screen.dart';
 import 'admin_panel_screen.dart';
+import 'warehouse/warehouse_screen.dart';
+
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
