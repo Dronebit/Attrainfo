@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../data/app_database.dart';
-import '../models/models.dart';
-import '../models/employee.dart';
-import '../models/region.dart';
-import '../theme.dart';
-import 'admin_admins_tab.dart';
-import 'admin_personnel_tab.dart';
+import '../../data/app_database.dart';
+import '../../models/models.dart';
+import '../../models/employee.dart';
+import '../../models/region.dart';
+import '../../theme.dart';
+import 'tabs/admin_admins_tab.dart';
+import 'tabs/admin_personnel_tab.dart';
 
 class AdminPanelScreen extends StatefulWidget {
   const AdminPanelScreen({super.key});
