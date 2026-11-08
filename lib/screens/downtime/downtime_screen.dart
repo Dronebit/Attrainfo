@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme.dart';
+import '../../theme.dart';
 
 class DowntimeScreen extends StatelessWidget {
   const DowntimeScreen({super.key});
