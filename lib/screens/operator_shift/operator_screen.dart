@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../data/app_database.dart';
-import '../models/enums.dart';
-import '../models/models.dart';
-import '../models/shift.dart';
-import '../theme.dart';
+import '../../data/app_database.dart';
+import '../../models/enums.dart';
+import '../../models/models.dart';
+import '../../models/shift.dart';
+import '../../theme.dart';
 
 class OperatorScreen extends StatelessWidget {
   const OperatorScreen({super.key});
