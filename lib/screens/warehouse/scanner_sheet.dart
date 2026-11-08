@@ -137,7 +137,8 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                       showFlashlight: true,     // встроенная кнопка фонарика
                       showGallery: false,       // не нужна галерея
                       showToggleCamera: false,  // не переключаем камеру
-                      showTitle: false,         // убираем свой заголовок
+                      showScannerOverlay: false,   // выключили встроенную рамку, т.к. рисуем свою
+),
                     ),
                     // Рамка по центру
                     Center(
