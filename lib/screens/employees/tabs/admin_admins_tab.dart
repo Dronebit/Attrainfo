@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import '../data/app_database.dart';
-import '../data/debug_log.dart';
-import '../models/employee.dart';
-import '../models/models.dart';
-import '../models/region.dart';
-import '../theme.dart';
-import '../widgets/role_management_dialog.dart';
-import '../widgets/workplace_change_dialog.dart';
+import '../../../data/app_database.dart';
+import '../../../data/debug_log.dart';
+import '../../../models/employee.dart';
+import '../../../models/models.dart';
+import '../../../models/region.dart';
+import '../../../theme.dart';
+import '../../../widgets/role_management_dialog.dart';
+import '../../../widgets/workplace_change_dialog.dart';
 
 class AdminAdminsTab extends StatefulWidget {
   final AppDatabase db;
