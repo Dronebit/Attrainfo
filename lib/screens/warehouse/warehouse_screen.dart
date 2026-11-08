@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../data/app_database.dart';
 import '../../models/employee.dart';
 import '../../models/inventory.dart';
+import '../../models/models.dart'; 
 import '../../theme.dart';
 import 'scanner_sheet.dart';
 
