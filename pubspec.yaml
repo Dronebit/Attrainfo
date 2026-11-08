@@ -15,7 +15,7 @@ dependencies:
   shared_preferences: ^2.3.0
   nfc_manager: ^4.2.1
   url_launcher: ^6.3.0
-  mobile_scanner: ^5.2.3
+  flutter_zxing: ^1.5.0    
 
 dev_dependencies:
   flutter_test:
