@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../data/app_database.dart';
-import '../data/debug_log.dart';
-import '../data/nfc_helper.dart';
-import '../models/models.dart';
-import '../models/employee.dart';
-import '../models/region.dart';
-import '../models/operator_park_link.dart';
-import '../models/shift_vacancy.dart';
-import '../theme.dart';
-import '../widgets/role_management_dialog.dart';
-import '../widgets/workplace_change_dialog.dart';
+import '../../../data/app_database.dart';
+import '../../../data/debug_log.dart';
+import '../../../data/nfc_helper.dart';
+import '../../../models/models.dart';
+import '../../../models/employee.dart';
+import '../../../models/region.dart';
+import '../../../models/operator_park_link.dart';
+import '../../../models/shift_vacancy.dart';
+import '../../../theme.dart';
+import '../../../widgets/role_management_dialog.dart';
+import '../../../widgets/workplace_change_dialog.dart';
+
 
 class AdminPersonnelTab extends StatefulWidget {
   final AppDatabase db;
