@@ -2,7 +2,7 @@ part of '../app_database.dart';
 
 // ═══════════ Склад ТМЦ (Товарно-материальные ценности) ═══════════
 
-extension _InventoryOps on AppDatabase {
+extension InventoryOps on AppDatabase {
   // ─── базовые геттеры ───
 
   InventoryItem? itemById(String? id) =>
