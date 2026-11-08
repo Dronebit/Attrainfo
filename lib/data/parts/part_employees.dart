@@ -2,7 +2,7 @@ part of '../app_database.dart';
 
 // ═══════════ Сотрудники, иерархия, назначения, роли ═══════════
 
-extension _EmployeesOps on AppDatabase {
+extension EmployeesOps on AppDatabase {
   // ─── базовые геттеры ───
 
   Employee? employeeById(String? id) =>
