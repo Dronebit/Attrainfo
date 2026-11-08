@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
-import '../theme.dart';
-import 'admin_panel_screen.dart';
-import 'dashboard_screen.dart';
-import 'debug_console_screen.dart';
-import 'downtime_screen.dart';
-import 'incidents_screen.dart';
-import 'infrastructure_screen.dart';
-import 'operator_screen.dart';
-import 'operators_screen.dart';
-import 'technicians_screen.dart';
-import 'warehouse/warehouse_screen.dart';
+import '../../theme.dart';
+import '../dashboard/dashboard_screen.dart';
+import '../debug/debug_console_screen.dart';
+import '../downtime/downtime_screen.dart';
+import '../employees/admin_panel_screen.dart';
+import '../employees/operators_screen.dart';
+import '../employees/technicians_screen.dart';
+import '../incidents/incidents_screen.dart';
+import '../infrastructure/infrastructure_screen.dart';
+import '../operator_shift/operator_screen.dart';
+import '../warehouse/warehouse_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -55,7 +55,9 @@ class _HomeShellState extends State<HomeShell> {
             _ScrollablePage(child: InfrastructureScreen()),
             _ScrollablePage(child: TechniciansScreen()),
             _ScrollablePage(child: OperatorScreen()),
-            _ScrollablePage(child: WarehouseScreen()),
+            // WarehouseScreen сам управляет скроллом через TabBarView,
+            // оборачивать в SingleChildScrollView нельзя.
+            WarehouseScreen(),
           ],
         ),
       ),
@@ -147,8 +149,8 @@ class _HomeDrawer extends StatelessWidget {
             subtitle: const Text('Позиции, остатки, операции'),
             onTap: () {
               Navigator.pop(context);
-              _push(context, 'Склад ТМЦ', const WarehouseScreen(),
-                  scroll: true);
+              // WarehouseScreen сам со скроллом — без scroll: true.
+              _push(context, 'Склад ТМЦ', const WarehouseScreen());
             },
           ),
           ListTile(
