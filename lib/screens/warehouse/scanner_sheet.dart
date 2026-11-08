@@ -29,10 +29,6 @@ class _ScannerSheet extends StatefulWidget {
 
 class _ScannerSheetState extends State<_ScannerSheet> {
   bool _handled = false;
-  bool _isTorchOn = false;
-  
-  // Ключ для управления встроенной камерой (включая фонарик)
-  final GlobalKey<ReaderWidgetState> _readerKey = GlobalKey<ReaderWidgetState>();
 
   void _onScan(Code code) {
     if (_handled) return;
@@ -102,7 +98,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
-          // 1. Наш кастомный заголовок (шторка)
+          // Заголовок
           Container(
             margin: const EdgeInsets.only(top: 8),
             width: 40,
@@ -128,7 +124,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
             ]),
           ),
           
-          // 2. Зона камеры с нашей кастомной рамкой
+          // Камера и рамка
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -137,16 +133,13 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Сама камера (чистый видеопоток без UI ZXing)
                     ReaderWidget(
-                      key: _readerKey,
                       onScan: _onScan,
-                      showScannerOverlay: false, // выкл рамку ZXing
-                      showFlashlight: false,     // выкл кнопку ZXing
-                      showGallery: false,        // выкл галерею ZXing
-                      showToggleCamera: false,   // выкл переключение камеры
+                      showScannerOverlay: false, // Наша рамка
+                      showFlashlight: true,      // Встроенная кнопка фонарика
+                      showGallery: false,
+                      showToggleCamera: false,
                     ),
-                    
                     // Наша кастомная золотая рамка
                     Container(
                       width: 250,
@@ -162,7 +155,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
             ),
           ),
 
-          // 3. Наши кастомные кнопки внизу
+          // Нижняя панель (своя кнопка "Вручную")
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             child: Column(children: [
@@ -171,30 +164,14 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                 style: TextStyle(fontSize: 12, color: AppColors.mut),
               ),
               const SizedBox(height: 12),
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      // Управляем вспышкой через GlobalKey
-                      setState(() => _isTorchOn = !_isTorchOn);
-                      _readerKey.currentState?.toggleTorch();
-                    },
-                    icon: Icon(
-                      _isTorchOn ? Icons.flashlight_on : Icons.flashlight_off,
-                      size: 16,
-                    ),
-                    label: Text(_isTorchOn ? 'Свет вкл' : 'Свет'),
-                  ),
+              SizedBox(
+                width: double.infinity, // кнопка на всю ширину
+                child: OutlinedButton.icon(
+                  onPressed: _manualInput,
+                  icon: const Icon(Icons.keyboard, size: 16),
+                  label: const Text('Ввести код вручную'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _manualInput,
-                    icon: const Icon(Icons.keyboard, size: 16),
-                    label: const Text('Вручную'),
-                  ),
-                ),
-              ]),
+              ),
             ]),
           ),
         ]),
