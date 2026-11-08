@@ -2,7 +2,7 @@ part of '../app_database.dart';
 
 // ═══════════ Орг. структура: города, локации, парки, регионы ═══════════
 
-extension _OrgStructureOps on AppDatabase {
+extension OrgStructureOps on AppDatabase {
   // ─── базовые геттеры ───
 
   City? cityById(String? id) => cities.firstWhereOrNull((c) => c.id == id);
@@ -83,8 +83,8 @@ extension _OrgStructureOps on AppDatabase {
       return admin.regionId == null ? null : regionById(admin.regionId);
     }
     if (admin.role == EmployeeRole.parkAdmin && admin.parkId != null) {
-      final regionsOfPark = this.regionsOfPark(admin.parkId!);
-      return regionsOfPark.isEmpty ? null : regionsOfPark.first;
+      final regsOfPark = regionsOfPark(admin.parkId!);
+      return regsOfPark.isEmpty ? null : regsOfPark.first;
     }
     return null;
   }
