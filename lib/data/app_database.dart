@@ -53,6 +53,14 @@ class AppDatabase extends ChangeNotifier {
   List<StorageLocation> storageLocations = [];
   List<StockTransaction> stockTransactions = [];
 
+
+
+
+    void setOpSelectingRides(bool v) {
+    opSelectingRides = v;
+    notifyListeners();
+  }
+
   // ═══════════ save / load / reset ═══════════
 
   Future<void> save() async {
