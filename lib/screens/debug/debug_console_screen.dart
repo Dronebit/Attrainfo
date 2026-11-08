@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../data/debug_log.dart';
-import '../data/nfc_helper.dart';
-import '../theme.dart';
+import '../../data/debug_log.dart';
+import '../../data/nfc_helper.dart';
+import '../../theme.dart';
 
 class DebugConsoleScreen extends StatefulWidget {
   const DebugConsoleScreen({super.key});
