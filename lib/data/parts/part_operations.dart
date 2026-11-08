@@ -2,7 +2,7 @@ part of '../app_database.dart';
 
 // ═══════════ Аттракционы, простои, инциденты, аналитика ═══════════
 
-extension _OperationsOps on AppDatabase {
+extension OperationsOps on AppDatabase {
   // ─── базовые геттеры ───
 
   Ride? rideById(String? id) => rides.firstWhereOrNull((r) => r.id == id);
@@ -125,7 +125,7 @@ extension _OperationsOps on AppDatabase {
       final cur =
           map[d.rideId] ?? (total: 0.0, byReason: <DowntimeReason, double>{});
       final br = Map<DowntimeReason, double>.from(cur.byReason);
-      br[d.reason] = (br[d.reason] ?? 0) + hrs;
+      br[d.reason] = (br[d.reason] ?? 0.0) + hrs;
       map[d.rideId] = (total: cur.total + hrs, byReason: br);
     }
     return map.entries
