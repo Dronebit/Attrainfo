@@ -482,7 +482,8 @@ class _ItemsTabState extends State<_ItemsTab> {
                               fontSize: 12, color: AppColors.dim))
                     else
                       for (final e in db.stockByLocation(it.id).entries)
-                        _locationRow(db, e.key, e.value, it, onTapShelf: true),
+                        _locationRow(db, e.key, e.value, it,
+                            onTapShelf: true),
                     const SizedBox(height: 16),
                     _sectionTitle('ПОСЛЕДНИЕ ОПЕРАЦИИ'),
                     const SizedBox(height: 6),
@@ -504,7 +505,7 @@ class _ItemsTabState extends State<_ItemsTab> {
                         onTap: () {
                           Navigator.pop(ctx);
                           _openTransactionDialog(
-                              db, it, StockTransactionType.income);
+                              context, db, it, StockTransactionType.income);
                         },
                       ),
                       _actionBtn(
@@ -514,7 +515,7 @@ class _ItemsTabState extends State<_ItemsTab> {
                         onTap: () {
                           Navigator.pop(ctx);
                           _openTransactionDialog(
-                              db, it, StockTransactionType.outcome);
+                              context, db, it, StockTransactionType.outcome);
                         },
                       ),
                       _actionBtn(
@@ -524,7 +525,7 @@ class _ItemsTabState extends State<_ItemsTab> {
                         onTap: () {
                           Navigator.pop(ctx);
                           _openTransactionDialog(
-                              db, it, StockTransactionType.writeOff);
+                              context, db, it, StockTransactionType.writeOff);
                         },
                       ),
                       _actionBtn(
@@ -534,7 +535,7 @@ class _ItemsTabState extends State<_ItemsTab> {
                         onTap: () {
                           Navigator.pop(ctx);
                           _openTransactionDialog(
-                              db, it, StockTransactionType.transfer);
+                              context, db, it, StockTransactionType.transfer);
                         },
                       ),
                       _actionBtn(
@@ -543,8 +544,8 @@ class _ItemsTabState extends State<_ItemsTab> {
                         color: AppColors.pur,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openTransactionDialog(
-                              db, it, StockTransactionType.inventory);
+                          _openTransactionDialog(context, db, it,
+                              StockTransactionType.inventory);
                         },
                       ),
                     ]),
@@ -1116,7 +1117,8 @@ class _LocationsTabState extends State<_LocationsTab> {
                         color: AppColors.grn,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openShelfTransaction(db, loc, StockTransactionType.income);
+                          _openShelfTransaction(
+                              context, db, loc, StockTransactionType.income);
                         },
                       ),
                       _actionBtn(
@@ -1125,7 +1127,8 @@ class _LocationsTabState extends State<_LocationsTab> {
                         color: AppColors.amb,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openShelfTransaction(db, loc, StockTransactionType.outcome);
+                          _openShelfTransaction(
+                              context, db, loc, StockTransactionType.outcome);
                         },
                       ),
                       _actionBtn(
@@ -1134,7 +1137,8 @@ class _LocationsTabState extends State<_LocationsTab> {
                         color: AppColors.red,
                         onTap: () {
                           Navigator.pop(ctx);
-                          _openShelfTransaction(db, loc, StockTransactionType.writeOff);
+                          _openShelfTransaction(context, db, loc,
+                              StockTransactionType.writeOff);
                         },
                       ),
                     ]),
@@ -1152,7 +1156,7 @@ class _LocationsTabState extends State<_LocationsTab> {
     final qty = db.stockAt(it.id, loc.id);
     final belowMin = qty < it.minQuantity;
     return InkWell(
-      onTap: () => _openTransactionDialogFromShelf(db, loc, it),
+      onTap: () => _openTransactionDialogFromShelf(context, db, loc, it),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
@@ -1271,7 +1275,8 @@ class _LocationsTabState extends State<_LocationsTab> {
     }
 
     final conflict = db.storageLocations.firstWhere(
-      (x) => x.code.toLowerCase() == code.toLowerCase() &&
+      (x) =>
+          x.code.toLowerCase() == code.toLowerCase() &&
           x.id != editing?.id,
       orElse: () => StorageLocation(
           id: '', parkId: parkId, code: '', name: ''),
@@ -1327,7 +1332,10 @@ class _LocationsTabState extends State<_LocationsTab> {
     _snack('Локация удалена');
   }
 
-  Future<void> _openShelfTransaction(AppDatabase db, StorageLocation loc,
+  Future<void> _openShelfTransaction(
+      BuildContext context,
+      AppDatabase db,
+      StorageLocation loc,
       StockTransactionType type) async {
     if (db.inventoryItems.isEmpty) {
       _snack('Сначала создайте хотя бы одну позицию');
@@ -1335,7 +1343,8 @@ class _LocationsTabState extends State<_LocationsTab> {
     }
     final item = await _pickItem(db);
     if (item == null) return;
-    _openTransactionDialog(db, item, type, prefilledLocation: loc);
+    _openTransactionDialog(context, db, item, type,
+        prefilledLocation: loc);
   }
 
   Future<InventoryItem?> _pickItem(AppDatabase db) async {
@@ -1375,8 +1384,11 @@ class _LocationsTabState extends State<_LocationsTab> {
   }
 
   Future<void> _openTransactionDialogFromShelf(
-      AppDatabase db, StorageLocation loc, InventoryItem it) async {
-    _openTransactionDialog(db, it, StockTransactionType.income,
+      BuildContext context,
+      AppDatabase db,
+      StorageLocation loc,
+      InventoryItem it) async {
+    _openTransactionDialog(context, db, it, StockTransactionType.income,
         prefilledLocation: loc);
   }
 
@@ -1573,7 +1585,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
         Align(
           alignment: Alignment.centerRight,
           child: Text(
-            '${t.quantity > 0 ? '' : ''}${_num(t.quantity)} ${item?.unit.label ?? ''}',
+            '${_num(t.quantity)} ${item?.unit.label ?? ''}',
             style: TextStyle(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w700,
@@ -1592,12 +1604,6 @@ class _TransactionsTabState extends State<_TransactionsTab> {
         StockTransactionType.transfer => AppColors.cyn,
         StockTransactionType.inventory => AppColors.pur,
       };
-
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
-    );
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1605,6 +1611,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
 // ═══════════════════════════════════════════════════════════════════
 
 Future<void> _openTransactionDialog(
+  BuildContext context,
   AppDatabase db,
   InventoryItem item,
   StockTransactionType type, {
@@ -1613,7 +1620,7 @@ Future<void> _openTransactionDialog(
   // Для inventory — двухшаговый: показываем учётный остаток,
   // пользователь вводит факт.
   if (type == StockTransactionType.inventory) {
-    return _openInventoryDialog(db, item, prefilledLocation);
+    return _openInventoryDialog(context, db, item, prefilledLocation);
   }
 
   final qtyCtrl = TextEditingController(text: '1');
@@ -1638,7 +1645,7 @@ Future<void> _openTransactionDialog(
   }
 
   final ok = await showDialog<bool>(
-    context: db.context,
+    context: context,
     useRootNavigator: true,
     barrierDismissible: false,
     builder: (ctx) => StatefulBuilder(
@@ -1746,24 +1753,24 @@ Future<void> _openTransactionDialog(
 
   final qty = double.tryParse(qtyCtrl.text.trim().replaceAll(',', '.'));
   if (qty == null || qty <= 0) {
-    _snackIn(db.context, 'Некорректное количество');
+    _snackIn(context, 'Некорректное количество');
     return;
   }
   if (type == StockTransactionType.income && toLocationId == null) {
-    _snackIn(db.context, 'Выберите локацию');
+    _snackIn(context, 'Выберите локацию');
     return;
   }
   if (type != StockTransactionType.income && fromLocationId == null) {
-    _snackIn(db.context, 'Выберите локацию');
+    _snackIn(context, 'Выберите локацию');
     return;
   }
   if (type == StockTransactionType.transfer && toLocationId == null) {
-    _snackIn(db.context, 'Выберите локацию назначения');
+    _snackIn(context, 'Выберите локацию назначения');
     return;
   }
   if (type == StockTransactionType.transfer &&
       fromLocationId == toLocationId) {
-    _snackIn(db.context, 'Локации совпадают');
+    _snackIn(context, 'Локации совпадают');
     return;
   }
 
@@ -1773,8 +1780,9 @@ Future<void> _openTransactionDialog(
     itemId: item.id,
     fromLocationId:
         type == StockTransactionType.income ? null : fromLocationId,
-    toLocationId:
-        type == StockTransactionType.income ? toLocationId : (type == StockTransactionType.transfer ? toLocationId : null),
+    toLocationId: type == StockTransactionType.income
+        ? toLocationId
+        : (type == StockTransactionType.transfer ? toLocationId : null),
     quantity: qty,
     rideId: rideId,
     comment: commentCtrl.text.trim().isEmpty
@@ -1784,30 +1792,29 @@ Future<void> _openTransactionDialog(
 
   final err = db.applyStockTransaction(tx);
   if (err != null) {
-    _snackIn(db.context, err);
+    _snackIn(context, err);
     return;
   }
-  _snackIn(db.context, '${type.label}: ${_num(qty)} ${item.unit.label}');
+  _snackIn(context, '${type.label}: ${_num(qty)} ${item.unit.label}');
 }
 
 Future<void> _openInventoryDialog(
+  BuildContext context,
   AppDatabase db,
   InventoryItem item,
   StorageLocation? prefilled,
 ) async {
-  final locs = prefilled != null
-      ? [prefilled]
-      : db.locationsOfItem(item.id);
+  final locs =
+      prefilled != null ? [prefilled] : db.locationsOfItem(item.id);
   if (locs.isEmpty) {
-    _snackIn(db.context,
-        'Нет локаций с остатком этой позиции');
+    _snackIn(context, 'Нет локаций с остатком этой позиции');
     return;
   }
   String? locId = locs.first.id;
   final factCtrl = TextEditingController();
 
   final ok = await showDialog<bool>(
-    context: db.context,
+    context: context,
     useRootNavigator: true,
     barrierDismissible: false,
     builder: (ctx) => StatefulBuilder(
@@ -1852,8 +1859,7 @@ Future<void> _openInventoryDialog(
                           style: TextStyle(
                               fontSize: 12, color: AppColors.dim)),
                       const Spacer(),
-                      Text(
-                          '${_num(systemQty)} ${item.unit.label}',
+                      Text('${_num(systemQty)} ${item.unit.label}',
                           style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -1895,13 +1901,13 @@ Future<void> _openInventoryDialog(
 
   final fact = double.tryParse(factCtrl.text.trim().replaceAll(',', '.'));
   if (fact == null || fact < 0) {
-    _snackIn(db.context, 'Некорректное количество');
+    _snackIn(context, 'Некорректное количество');
     return;
   }
   final system = db.stockAt(item.id, locId!);
   final diff = fact - system;
   if (diff.abs() < 0.001) {
-    _snackIn(db.context, 'Расхождений нет');
+    _snackIn(context, 'Расхождений нет');
     return;
   }
 
@@ -1916,10 +1922,11 @@ Future<void> _openInventoryDialog(
   );
   final err = db.applyStockTransaction(tx);
   if (err != null) {
-    _snackIn(db.context, err);
+    _snackIn(context, err);
     return;
   }
-  _snackIn(db.context,
+  _snackIn(
+      context,
       'Скорректировано на ${diff > 0 ? "+" : ""}${_num(diff)} ${item.unit.label}');
 }
 
@@ -2188,7 +2195,10 @@ Widget _iconBtn({
         border: Border.all(color: AppColors.line2),
       ),
       child: Icon(icon,
-          size: 13, color: onTap == null ? AppColors.dim : (danger ? AppColors.red : AppColors.mut)),
+          size: 13,
+          color: onTap == null
+              ? AppColors.dim
+              : (danger ? AppColors.red : AppColors.mut)),
     ),
   );
 }
