@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'data/app_database.dart';
 import 'data/debug_log.dart';
-import 'screens/home_shell.dart';
+import 'screens/home/home_shell.dart';
 import 'theme.dart';
 
 void main() async {
