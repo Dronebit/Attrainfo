@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../data/app_database.dart';
-import '../models/employee.dart';
-import '../theme.dart';
+import '../../data/app_database.dart';
+import '../../models/employee.dart';
+import '../../theme.dart';
 
 class TechniciansScreen extends StatelessWidget {
   const TechniciansScreen({super.key});
