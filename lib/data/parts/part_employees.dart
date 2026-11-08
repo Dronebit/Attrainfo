@@ -41,6 +41,12 @@ extension _EmployeesOps on AppDatabase {
     return (e != null && e.hasRole(EmployeeRole.technician)) ? e : null;
   }
 
+  ShiftVacancy? vacancyById(String? id) =>
+      vacancies.firstWhereOrNull((v) => v.id == id);
+
+  VacancyApplication? applicationById(String? id) =>
+      applications.firstWhereOrNull((a) => a.id == id);
+
   // ─── списки по ролям ───
 
   List<Employee> get operators =>
@@ -940,11 +946,6 @@ extension _EmployeesOps on AppDatabase {
     activeShift = null;
     opSelectingRides = false;
     save();
-  }
-
-  void setOpSelectingRides(bool v) {
-    opSelectingRides = v;
-    notifyListeners();
   }
 
   void setShiftRides(List<String> ids) {
