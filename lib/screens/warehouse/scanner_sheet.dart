@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, rootBundle;
 import 'package:permission_handler/permission_handler.dart';
@@ -11,7 +12,7 @@ import '../../models/inventory.dart';
 import '../../theme.dart';
 
 // ═══════════════════════════════════════════════════════════════════
-// Публичный API (совместим с previous)
+// Публичный API
 // ═══════════════════════════════════════════════════════════════════
 
 class AppScanResult {
@@ -51,21 +52,23 @@ class _ScannerSheetState extends State<_ScannerSheet>
     with WidgetsBindingObserver {
   late final wx.WxScanController _controller;
 
-  // Состояние фиксации
   bool _isProcessing = false;
   String? _rawCodeString;
   InventoryItem? _foundItem;
   StorageLocation? _foundLoc;
 
-  // Живые рамки
+  // Живые рамки (нормализованные координаты)
   List<wx.ScanResult> _liveResults = [];
+  List<wx.ScanCandidate> _liveCandidates = [];
 
-  // Инициализация
   bool _initializing = true;
   String? _initError;
   bool _hasTorch = false;
 
   DateTime _lastHaptic = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // Счётчик кадров для отладки
+  int _frameCounter = 0;
 
   @override
   void initState() {
@@ -97,13 +100,20 @@ class _ScannerSheetState extends State<_ScannerSheet>
         srModel: srModel,
       );
 
-      // Проверяем поддержку фонарика один раз
       _hasTorch = await _controller.hasTorch();
+
+      // Логируем состояние после инициализации
+      debugPrint('[Scanner] init OK. modelsLoaded='
+          '${_controller.value.modelsLoaded}, '
+          'isInitialized=${_controller.value.isInitialized}, '
+          'error=${_controller.value.error}');
 
       _controller.scans.listen(_onScanFrame);
 
       if (mounted) setState(() => _initializing = false);
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[Scanner] init failed: $e');
+      debugPrint('[Scanner] stack: ${st.toString().split('\n').take(4).join(' | ')}');
       if (mounted) {
         setState(() {
           _initializing = false;
@@ -121,9 +131,29 @@ class _ScannerSheetState extends State<_ScannerSheet>
   void _onScanFrame(wx.ScanOutcome outcome) {
     if (!mounted) return;
 
+    _frameCounter++;
+
+    // ─── Отладка каждого кадра (не засоряем лог каждым кадром) ───
+    if (_frameCounter % 30 == 0 || outcome.results.isNotEmpty || outcome.hasUndecodable) {
+      debugPrint('[Scanner] frame #$_frameCounter '
+          'results=${outcome.results.length} '
+          'candidates=${outcome.candidates.length} '
+          'hasUndecodable=${outcome.hasUndecodable} '
+          'isEmpty=${outcome.isEmpty} '
+          'size=${outcome.width}x${outcome.height}');
+      for (final r in outcome.results) {
+        debugPrint('  • result: "${r.text}" corners=${r.corners.length}');
+      }
+      for (final c in outcome.candidates) {
+        debugPrint('  • candidate: corners=${c.corners.length}');
+      }
+    }
+
     final results = outcome.results;
+    final candidates = outcome.candidates;
 
     if (!_isProcessing) {
+      // Ищем первый результат с непустым текстом
       wx.ScanResult? valid;
       for (final r in results) {
         if (r.text.isNotEmpty) {
@@ -140,6 +170,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
         }
 
         final raw = valid.text;
+        debugPrint('[Scanner] accepted: "$raw"');
+
         String searchCode = raw;
         ScanKind kind = ScanKind.unknown;
 
@@ -156,8 +188,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
         if (kind == ScanKind.location) {
           loc = widget.db.storageLocations
-              .where((l) =>
-                  l.code.toLowerCase() == searchCode.toLowerCase())
+              .where((l) => l.code.toLowerCase() == searchCode.toLowerCase())
               .firstOrNull;
         } else if (kind == ScanKind.item) {
           item = widget.db.inventoryItems
@@ -167,8 +198,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
               .firstOrNull;
         } else {
           loc = widget.db.storageLocations
-              .where((l) =>
-                  l.code.toLowerCase() == searchCode.toLowerCase())
+              .where((l) => l.code.toLowerCase() == searchCode.toLowerCase())
               .firstOrNull;
           if (loc == null) {
             item = widget.db.inventoryItems
@@ -185,12 +215,17 @@ class _ScannerSheetState extends State<_ScannerSheet>
           _foundItem = item;
           _foundLoc = loc;
           _liveResults = results;
+          _liveCandidates = [];
         });
         return;
       }
     }
 
-    setState(() => _liveResults = results);
+    // Обновляем живые рамки (даже если просто candidates)
+    setState(() {
+      _liveResults = results;
+      _liveCandidates = candidates;
+    });
   }
 
   void _resetScanner() {
@@ -200,6 +235,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
       _foundItem = null;
       _foundLoc = null;
       _liveResults = [];
+      _liveCandidates = [];
     });
   }
 
@@ -300,13 +336,11 @@ class _ScannerSheetState extends State<_ScannerSheet>
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(children: [
-              const Icon(Icons.qr_code_scanner,
-                  size: 20, color: AppColors.amb),
+              const Icon(Icons.qr_code_scanner, size: 20, color: AppColors.amb),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text('Сканирование',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
               IconButton(
                 icon: const Icon(Icons.close),
@@ -342,13 +376,11 @@ class _ScannerSheetState extends State<_ScannerSheet>
             const Icon(Icons.videocam_off, size: 48, color: AppColors.red),
             const SizedBox(height: 12),
             const Text('Камера недоступна',
-                style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w700)),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Text(_initError!,
                 textAlign: TextAlign.center,
-                style:
-                    const TextStyle(fontSize: 12, color: AppColors.mut)),
+                style: const TextStyle(fontSize: 12, color: AppColors.mut)),
             const SizedBox(height: 16),
             FilledButton.icon(
               style: FilledButton.styleFrom(
@@ -412,20 +444,19 @@ class _ScannerSheetState extends State<_ScannerSheet>
                     width: 250,
                     height: 250,
                     decoration: BoxDecoration(
-                      border:
-                          Border.all(color: AppColors.amb, width: 3),
+                      border: Border.all(color: AppColors.amb, width: 3),
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
 
-              // AR-рамки
-              if (_liveResults.isNotEmpty)
+              // AR-рамки по результатам и кандидатам
+              if (_liveResults.isNotEmpty || _liveCandidates.isNotEmpty)
                 IgnorePointer(
                   child: CustomPaint(
                     painter: _TrackingPainter(
                       results: _liveResults,
-                      previewSize: previewSize,
+                      candidates: _liveCandidates,
                     ),
                   ),
                 ),
@@ -473,16 +504,14 @@ class _ScannerSheetState extends State<_ScannerSheet>
                   valueListenable: _controller,
                   builder: (context, value, _) {
                     return OutlinedButton.icon(
-                      onPressed: () =>
-                          _controller.setTorch(!value.torchEnabled),
+                      onPressed: () => _controller.setTorch(!value.torchEnabled),
                       icon: Icon(
                         value.torchEnabled
                             ? Icons.flashlight_on
                             : Icons.flashlight_off,
                         size: 16,
                       ),
-                      label: Text(
-                          value.torchEnabled ? 'Свет вкл' : 'Свет'),
+                      label: Text(value.torchEnabled ? 'Свет вкл' : 'Свет'),
                     );
                   },
                 ),
@@ -497,9 +526,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
                 size: 16,
               ),
               label: Text(
-                _isProcessing
-                    ? 'Сканировать другое'
-                    : 'Ввести вручную',
+                _isProcessing ? 'Сканировать другое' : 'Ввести вручную',
               ),
             ),
           ),
@@ -512,8 +539,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   Widget _buildFloatingCard() {
     final isFound = _foundItem != null || _foundLoc != null;
-    final title =
-        _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
+    final title = _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
 
     final subtitle = _foundItem != null
         ? '${_foundItem!.sku} · Остаток: '
@@ -568,8 +594,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
                   ),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.dim),
+                    style: const TextStyle(fontSize: 11, color: AppColors.dim),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -600,25 +625,17 @@ class _ScannerSheetState extends State<_ScannerSheet>
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// AR-оверлей (по corners: dx / dy)
+// AR-оверлей: используем нормализованные координаты (0..1) и ScanQuad.bounds
 // ═══════════════════════════════════════════════════════════════════
 
 class _TrackingPainter extends CustomPainter {
   final List<wx.ScanResult> results;
-  final wx.WxPreviewSize previewSize;
+  final List<wx.ScanCandidate> candidates;
 
-  _TrackingPainter({required this.results, required this.previewSize});
+  _TrackingPainter({required this.results, required this.candidates});
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Масштаб для BoxFit.cover
-    final scale = math.max(
-      size.width / previewSize.rotatedWidth,
-      size.height / previewSize.rotatedHeight,
-    );
-    final dx = (size.width - previewSize.rotatedWidth * scale) / 2;
-    final dy = (size.height - previewSize.rotatedHeight * scale) / 2;
-
     final fillPaint = Paint()
       ..color = AppColors.grn.withValues(alpha: 0.2)
       ..style = PaintingStyle.fill;
@@ -634,39 +651,52 @@ class _TrackingPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
 
-    for (final result in results) {
-      if (result.corners.length < 4) continue;
+    final candidatePaint = Paint()
+      ..color = AppColors.amb.withValues(alpha: 0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
 
-      // Ограничивающий прямоугольник по четырём углам (dx/dy — уже double)
-      double minX = double.infinity, minY = double.infinity;
-      double maxX = -double.infinity, maxY = -double.infinity;
-      for (final p in result.corners) {
-        if (p.dx < minX) minX = p.dx;
-        if (p.dy < minY) minY = p.dy;
-        if (p.dx > maxX) maxX = p.dx;
-        if (p.dy > maxY) maxY = p.dy;
-      }
+    // Успешно декодированные
+    for (final r in results) {
+      if (r.corners.length < 4) continue;
+      final b = r.corners.bounds; // нормализованный {left, top, right, bottom}
+      _drawQuad(canvas, size, b, fillPaint, glowPaint, borderPaint);
+    }
 
-      final screenRect = Rect.fromLTWH(
-        dx + minX * scale,
-        dy + minY * scale,
-        (maxX - minX) * scale,
-        (maxY - minY) * scale,
-      );
-
-      canvas.drawRect(screenRect, fillPaint);
-      canvas.drawRect(screenRect, glowPaint);
-      canvas.drawRect(screenRect, borderPaint);
-
-      _drawCorner(canvas, screenRect.topLeft, 1, 1, borderPaint);
-      _drawCorner(canvas, screenRect.topRight, -1, 1, borderPaint);
-      _drawCorner(canvas, screenRect.bottomLeft, 1, -1, borderPaint);
-      _drawCorner(canvas, screenRect.bottomRight, -1, -1, borderPaint);
+    // Только обнаруженные (не декодированные)
+    for (final c in candidates) {
+      if (c.corners.length < 4) continue;
+      final b = c.corners.bounds;
+      _drawQuad(canvas, size, b, null, null, candidatePaint);
     }
   }
 
-  void _drawCorner(
-      Canvas canvas, Offset p, double dx, double dy, Paint paint) {
+  void _drawQuad(
+    Canvas canvas,
+    Size size,
+    ({double bottom, double left, double right, double top}) b,
+    Paint? fill,
+    Paint? glow,
+    Paint border,
+  ) {
+    final rect = Rect.fromLTRB(
+      b.left * size.width,
+      b.top * size.height,
+      b.right * size.width,
+      b.bottom * size.height,
+    );
+
+    if (fill != null) canvas.drawRect(rect, fill);
+    if (glow != null) canvas.drawRect(rect, glow);
+    canvas.drawRect(rect, border);
+
+    _drawCorner(canvas, rect.topLeft, 1, 1, border);
+    _drawCorner(canvas, rect.topRight, -1, 1, border);
+    _drawCorner(canvas, rect.bottomLeft, 1, -1, border);
+    _drawCorner(canvas, rect.bottomRight, -1, -1, border);
+  }
+
+  void _drawCorner(Canvas canvas, Offset p, double dx, double dy, Paint paint) {
     const len = 15.0;
     canvas.drawLine(p, p + Offset(len * dx, 0), paint);
     canvas.drawLine(p, p + Offset(0, len * dy), paint);
@@ -674,6 +704,7 @@ class _TrackingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrackingPainter oldDelegate) {
-    return oldDelegate.results != results;
+    return oldDelegate.results != results ||
+        oldDelegate.candidates != candidates;
   }
 }
