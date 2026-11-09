@@ -2,7 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_zxing/flutter_zxing.dart';
-import '../../data/debug_log.dart';
+import '../../data/app_database.dart';
+import '../../models/inventory.dart';
 import '../../theme.dart';
 
 class ScanResult {
@@ -14,26 +15,30 @@ class ScanResult {
 
 enum ScanKind { location, item, unknown }
 
-Future<ScanResult?> showScannerSheet(BuildContext context) {
+Future<ScanResult?> showScannerSheet(BuildContext context, AppDatabase db) {
   return showModalBottomSheet<ScanResult>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => const _ScannerSheet(),
+    builder: (_) => _ScannerSheet(db: db),
   );
 }
 
 class _ScannerSheet extends StatefulWidget {
-  const _ScannerSheet();
+  final AppDatabase db;
+  const _ScannerSheet({required this.db});
   @override
   State<_ScannerSheet> createState() => _ScannerSheetState();
 }
 
 class _ScannerSheetState extends State<_ScannerSheet> {
-  bool _handled = false;
-  Code? _lastCode; // Для отрисовки AR-рамки
+  bool _isProcessing = false;
+  Code? _lastCode;
 
-  // Конвертируем Position (4 угла) в Rect
+  InventoryItem? _foundItem;
+  StorageLocation? _foundLoc;
+  String? _rawCodeString;
+
   Rect? _positionToRect(Position? pos) {
     if (pos == null) return null;
     final left = [pos.topLeftX, pos.bottomLeftX].reduce((a, b) => a < b ? a : b).toDouble();
@@ -44,34 +49,68 @@ class _ScannerSheetState extends State<_ScannerSheet> {
   }
 
   void _onScan(Code code) {
-    if (_handled) return;
+    if (_isProcessing) return;
     if (!code.isValid || code.text == null || code.text!.isEmpty) return;
 
-    // 1. Вибрация для отклика
     HapticFeedback.mediumImpact();
 
-    // 2. Сохраняем код, чтобы AR-рамка нарисовалась
-    setState(() {
-      _lastCode = code;
-    });
+    final raw = code.text!;
+    String searchCode = raw;
+    ScanKind kind = ScanKind.unknown;
 
-    // 3. Задержка 300мс, чтобы пользователь увидел зеленую рамку
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        _handled = true;
-        Navigator.pop(context, _makeResult(code.text!));
+    if (raw.startsWith('LOC:')) {
+      searchCode = raw.substring(4);
+      kind = ScanKind.location;
+    } else if (raw.startsWith('SKU:')) {
+      searchCode = raw.substring(4);
+      kind = ScanKind.item;
+    }
+
+    InventoryItem? item;
+    StorageLocation? loc;
+
+    if (kind == ScanKind.location) {
+      loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+    } else if (kind == ScanKind.item) {
+      item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+    } else {
+      loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+      if (loc == null) {
+        item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
       }
+    }
+
+    setState(() {
+      _isProcessing = true;
+      _lastCode = code;
+      _rawCodeString = raw;
+      _foundItem = item;
+      _foundLoc = loc;
     });
   }
 
-  ScanResult _makeResult(String raw) {
-    if (raw.startsWith('LOC:')) {
-      return ScanResult(raw, ScanKind.location, raw.substring(4));
+  void _resetScanner() {
+    setState(() {
+      _isProcessing = false;
+      _lastCode = null;
+      _foundItem = null;
+      _foundLoc = null;
+      _rawCodeString = null;
+    });
+  }
+
+  void _confirmSelection() {
+    if (_rawCodeString == null) return;
+    ScanKind kind = ScanKind.unknown;
+    String code = _rawCodeString!;
+    if (code.startsWith('LOC:')) {
+      kind = ScanKind.location;
+      code = code.substring(4);
+    } else if (code.startsWith('SKU:')) {
+      kind = ScanKind.item;
+      code = code.substring(4);
     }
-    if (raw.startsWith('SKU:')) {
-      return ScanResult(raw, ScanKind.item, raw.substring(4));
-    }
-    return ScanResult(raw, ScanKind.unknown, raw);
+    Navigator.pop(context, ScanResult(_rawCodeString!, kind, code));
   }
 
   Future<void> _manualInput() async {
@@ -90,13 +129,9 @@ class _ScannerSheetState extends State<_ScannerSheet> {
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Отмена')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
           FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: AppColors.amb,
-                foregroundColor: const Color(0xFF1C1204)),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.amb, foregroundColor: const Color(0xFF1C1204)),
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('OK'),
           ),
@@ -105,7 +140,12 @@ class _ScannerSheetState extends State<_ScannerSheet> {
     );
     if (ok == null || ok.isEmpty) return;
     if (!mounted) return;
-    Navigator.pop(context, _makeResult(ok));
+    
+    Navigator.pop(context, ScanResult(
+      ok, 
+      ok.startsWith('LOC:') ? ScanKind.location : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown), 
+      ok.replaceAll(RegExp(r'^(LOC:|SKU:)'), '')
+    ));
   }
 
   @override
@@ -121,15 +161,11 @@ class _ScannerSheetState extends State<_ScannerSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
-          // Заголовок
           Container(
             margin: const EdgeInsets.only(top: 8),
             width: 40,
             height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.line2,
-              borderRadius: BorderRadius.circular(2),
-            ),
+            decoration: BoxDecoration(color: AppColors.line2, borderRadius: BorderRadius.circular(2)),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -137,17 +173,12 @@ class _ScannerSheetState extends State<_ScannerSheet> {
               const Icon(Icons.qr_code_scanner, size: 20, color: AppColors.amb),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text('Сканирование',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                child: Text('Сканирование', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
-              ),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
             ]),
           ),
           
-          // Камера и AR-рамка
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -156,17 +187,15 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Камера (скрываем встроенные элементы ZXing)
                     ReaderWidget(
                       onScan: _onScan,
-                      showScannerOverlay: false, 
-                      showFlashlight: false,     
+                      showScannerOverlay: false,
+                      showFlashlight: true, // ← ВЕРНУЛИ ФОНАРИК
                       showGallery: false,
                       showToggleCamera: false,
                     ),
                     
-                    // Наша статичная рамка (показывается, пока код не найден)
-                    if (_lastCode == null)
+                    if (!_isProcessing)
                       Container(
                         width: 250,
                         height: 250,
@@ -176,14 +205,19 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                         ),
                       ),
                       
-                    // AR-рамка (появляется, когда код распознан)
-                    if (_lastCode != null && _lastCode!.position != null)
+                    if (_isProcessing && _lastCode?.position != null)
                       Positioned.fill(
                         child: CustomPaint(
-                          painter: _ArOverlayPainter(
-                            _positionToRect(_lastCode!.position),
-                          ),
+                          painter: _ArOverlayPainter(_positionToRect(_lastCode!.position)),
                         ),
+                      ),
+
+                    if (_isProcessing)
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        bottom: 20,
+                        child: _buildFloatingCard(),
                       ),
                   ],
                 ),
@@ -191,27 +225,24 @@ class _ScannerSheetState extends State<_ScannerSheet> {
             ),
           ),
 
-          // Нижняя панель с кнопкой ручного ввода
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             child: Column(children: [
               Text(
-                _lastCode == null 
-                  ? 'Наведите на QR полки или позиции'
-                  : 'Код распознан!',
+                _isProcessing ? 'Подтвердите выбор' : 'Наведите на QR полки или позиции',
                 style: TextStyle(
                   fontSize: 12, 
-                  color: _lastCode == null ? AppColors.mut : AppColors.grn,
-                  fontWeight: _lastCode == null ? FontWeight.normal : FontWeight.bold,
+                  color: _isProcessing ? AppColors.amb : AppColors.mut,
+                  fontWeight: _isProcessing ? FontWeight.bold : FontWeight.normal,
                 ),
               ),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: _manualInput,
-                  icon: const Icon(Icons.keyboard, size: 16),
-                  label: const Text('Ввести код вручную'),
+                  onPressed: _isProcessing ? _resetScanner : _manualInput,
+                  icon: Icon(_isProcessing ? Icons.refresh : Icons.keyboard, size: 16),
+                  label: Text(_isProcessing ? 'Сканировать другое' : 'Ввести код вручную'),
                 ),
               ),
             ]),
@@ -220,11 +251,76 @@ class _ScannerSheetState extends State<_ScannerSheet> {
       ),
     );
   }
+
+  Widget _buildFloatingCard() {
+    final isFound = _foundItem != null || _foundLoc != null;
+    final title = _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
+    final subtitle = _foundItem != null 
+        ? '${_foundItem!.sku} · Остаток: ${widget.db.stockTotal(_foundItem!.id)} ${_foundItem!.unit.label}'
+        : (_foundLoc != null ? 'Локация: ${_foundLoc!.code}' : _rawCodeString);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isFound ? AppColors.grn.withValues(alpha: 0.5) : AppColors.red.withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isFound ? ( _foundLoc != null ? Icons.inventory_2_outlined : Icons.check_circle_outline) : Icons.error_outline,
+                color: isFound ? AppColors.grn : AppColors.red,
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, 
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(subtitle, 
+                      style: const TextStyle(fontSize: 11, color: AppColors.dim),
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (isFound)
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.amb,
+                  foregroundColor: const Color(0xFF1C1204),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onPressed: _confirmSelection,
+                child: const Text('Выбрать', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
-// ─────────────────────────────────────────────────────────────
-// AR-Оверлей для отрисовки зеленой рамки поверх кода
-// ─────────────────────────────────────────────────────────────
 class _ArOverlayPainter extends CustomPainter {
   final Rect? position;
   _ArOverlayPainter(this.position);
@@ -233,31 +329,24 @@ class _ArOverlayPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (position == null) return;
 
-    // Красивое свечение
     final glowPaint = Paint()
       ..color = AppColors.grn.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 12.0
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
 
-    // Четкая линия
     final paint = Paint()
       ..color = AppColors.grn
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
 
-    // Рисуем прямоугольник вокруг кода (с небольшим отступом)
     final rect = Rect.fromLTRB(
-      position!.left - 4,
-      position!.top - 4,
-      position!.right + 4,
-      position!.bottom + 4,
+      position!.left - 4, position!.top - 4, position!.right + 4, position!.bottom + 4,
     );
 
     canvas.drawRect(rect, glowPaint);
     canvas.drawRect(rect, paint);
 
-    // Рисуем AR-уголки
     _drawCorner(canvas, rect.topLeft, 1, 1, paint);
     _drawCorner(canvas, rect.topRight, -1, 1, paint);
     _drawCorner(canvas, rect.bottomLeft, 1, -1, paint);
