@@ -15,6 +15,7 @@ class ScanResult {
 
 enum ScanKind { location, item, unknown }
 
+// Теперь передаем db, чтобы сканер мог найти название
 Future<ScanResult?> showScannerSheet(BuildContext context, AppDatabase db) {
   return showModalBottomSheet<ScanResult>(
     context: context,
@@ -34,11 +35,13 @@ class _ScannerSheet extends StatefulWidget {
 class _ScannerSheetState extends State<_ScannerSheet> {
   bool _isProcessing = false;
   Code? _lastCode;
-
+  
+  // Найденные объекты для карточки
   InventoryItem? _foundItem;
   StorageLocation? _foundLoc;
   String? _rawCodeString;
 
+  // Конвертируем Position из ZXing в Rect
   Rect? _positionToRect(Position? pos) {
     if (pos == null) return null;
     final left = [pos.topLeftX, pos.bottomLeftX].reduce((a, b) => a < b ? a : b).toDouble();
@@ -49,7 +52,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
   }
 
   void _onScan(Code code) {
-    if (_isProcessing) return;
+    if (_isProcessing) return; // Игнорируем, если карточка уже открыта
     if (!code.isValid || code.text == null || code.text!.isEmpty) return;
 
     HapticFeedback.mediumImpact();
@@ -66,6 +69,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
       kind = ScanKind.item;
     }
 
+    // Ищем в базе
     InventoryItem? item;
     StorageLocation? loc;
 
@@ -74,6 +78,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
     } else if (kind == ScanKind.item) {
       item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
     } else {
+      // Если без префикса - ищем везде
       loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
       if (loc == null) {
         item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
@@ -141,6 +146,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
     if (ok == null || ok.isEmpty) return;
     if (!mounted) return;
     
+    // Эмулируем скан для ручного ввода
     Navigator.pop(context, ScanResult(
       ok, 
       ok.startsWith('LOC:') ? ScanKind.location : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown), 
@@ -161,6 +167,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
+          // Заголовок
           Container(
             margin: const EdgeInsets.only(top: 8),
             width: 40,
@@ -179,6 +186,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
             ]),
           ),
           
+          // Камера и оверлеи
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -190,11 +198,12 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                     ReaderWidget(
                       onScan: _onScan,
                       showScannerOverlay: false,
-                      showFlashlight: true, // ← ВЕРНУЛИ ФОНАРИК
+                      showFlashlight: true, // Фонарик
                       showGallery: false,
                       showToggleCamera: false,
                     ),
                     
+                    // Статичная рамка (когда ничего не сканируется)
                     if (!_isProcessing)
                       Container(
                         width: 250,
@@ -205,6 +214,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                         ),
                       ),
                       
+                    // AR-рамка (когда код найден)
                     if (_isProcessing && _lastCode?.position != null)
                       Positioned.fill(
                         child: CustomPaint(
@@ -212,6 +222,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                         ),
                       ),
 
+                    // ВСПЛЫВАЮЩАЯ КАРТОЧКА ВНИЗУ
                     if (_isProcessing)
                       Positioned(
                         left: 16,
@@ -225,6 +236,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
             ),
           ),
 
+          // Нижняя панель
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             child: Column(children: [
@@ -252,12 +264,16 @@ class _ScannerSheetState extends State<_ScannerSheet> {
     );
   }
 
+  // ─── ВСПЛЫВАЮЩАЯ КАРТОЧКА ───
   Widget _buildFloatingCard() {
     final isFound = _foundItem != null || _foundLoc != null;
     final title = _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
+    
     final subtitle = _foundItem != null 
         ? '${_foundItem!.sku} · Остаток: ${widget.db.stockTotal(_foundItem!.id)} ${_foundItem!.unit.label}'
-        : (_foundLoc != null ? 'Локация: ${_foundLoc!.code}' : _rawCodeString);
+        : (_foundLoc != null 
+            ? 'Локация: ${_foundLoc!.code}' 
+            : (_rawCodeString ?? 'Неизвестный код'));
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -321,6 +337,9 @@ class _ScannerSheetState extends State<_ScannerSheet> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// AR-Оверлей для отрисовки зеленой рамки поверх кода
+// ─────────────────────────────────────────────────────────────
 class _ArOverlayPainter extends CustomPainter {
   final Rect? position;
   _ArOverlayPainter(this.position);
@@ -329,24 +348,31 @@ class _ArOverlayPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (position == null) return;
 
+    // Красивое свечение
     final glowPaint = Paint()
       ..color = AppColors.grn.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 12.0
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
 
+    // Четкая линия
     final paint = Paint()
       ..color = AppColors.grn
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
 
+    // Рисуем прямоугольник вокруг кода (с небольшим отступом)
     final rect = Rect.fromLTRB(
-      position!.left - 4, position!.top - 4, position!.right + 4, position!.bottom + 4,
+      position!.left - 4,
+      position!.top - 4,
+      position!.right + 4,
+      position!.bottom + 4,
     );
 
     canvas.drawRect(rect, glowPaint);
     canvas.drawRect(rect, paint);
 
+    // Рисуем AR-уголки
     _drawCorner(canvas, rect.topLeft, 1, 1, paint);
     _drawCorner(canvas, rect.topRight, -1, 1, paint);
     _drawCorner(canvas, rect.bottomLeft, 1, -1, paint);
