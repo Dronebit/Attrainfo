@@ -73,6 +73,14 @@ class _ScannerSheetState extends State<_ScannerSheet>
   Timer? _watchdogTimer;
   bool _isRestarting = false;
 
+  // Список разрешений для адаптивного фоллбека на случай 0x0 багов драйвера
+  static const List<WxResolution> _resolutions = [
+    WxResolution.p1080,
+    WxResolution.p720,
+    WxResolution.p480,
+  ];
+  int _currentResolutionIndex = 0;
+
   DebugLog get _log => DebugLog.instance;
 
   @override
@@ -81,19 +89,14 @@ class _ScannerSheetState extends State<_ScannerSheet>
     WidgetsBinding.instance.addObserver(this);
     _log.info('[Scanner] initState');
 
-    // Give the sheet's slide-in animation a moment and the Surface under
-    // the preview time to be ready; opening the camera before that gives
-    // a black frame on Android. 500 ms is short enough not to feel like
-    // a wait and long enough for both.
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) _boot();
     });
   }
 
   Future<void> _boot() async {
-    _log.info('[Scanner] boot: start');
+    _log.info('[Scanner] boot: start (resolution index: $_currentResolutionIndex)');
 
-    // ---- Reset everything a retry might have left behind. ----
     _watchdogTimer?.cancel();
     _watchdogTimer = null;
     _rawFrameCount = 0;
@@ -133,12 +136,11 @@ class _ScannerSheetState extends State<_ScannerSheet>
       );
       _wxScanner = wxScanner;
 
-      // 1080p by default: on some Huawei devices 720p delivers no frames at
-      // all, and the extra pixels matter for dense codes anyway.
-      _log.info('[Scanner] WxScanController(p1080)...');
+      final targetResolution = _resolutions[_currentResolutionIndex];
+      _log.info('[Scanner] WxScanController($targetResolution)...');
       final controller = WxScanController(
         scanner: wxScanner,
-        resolution: WxResolution.p1080,
+        resolution: targetResolution,
       );
 
       _log.info('[Scanner] controller.initialize()...');
@@ -172,23 +174,12 @@ class _ScannerSheetState extends State<_ScannerSheet>
         _initError = null;
       });
 
-      // ---- The critical bit ----
-      // Opening the camera brings the pipeline up but does not start sending
-      // frames to the analysis stream; that takes an explicit
-      // setScanning(true). Calling it before the preview is laid out leaves
-      // a black frame on Android, so it waits for the first post-frame
-      // callback. Without this call the viewfinder works and nothing decodes,
-      // which is exactly the "no frames are passing" symptom.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _controller?.setScanning(true);
         _log.info('[Scanner] scanning started post-frame');
       });
 
-      // ---- Watchdog ----
-      // Fires once, seven seconds after boot. If by then the driver has
-      // delivered nothing at all, or only 0x0 frames, something is wrong
-      // that a retry may fix and silence will not.
       _watchdogTimer = Timer(const Duration(seconds: 7), () {
         if (!mounted) return;
         if (_rawFrameCount == 0 || _nonEmptyFrames == 0) {
@@ -250,14 +241,18 @@ class _ScannerSheetState extends State<_ScannerSheet>
           'candidates=${frame.candidates.length}');
     }
 
-    // A 0x0 frame is a driver bug on some Huawei devices. Restart the stream
-    // once; the counters are reset below in _restartCameraStream so the
-    // watchdog gets a fresh window if the restart does not help.
+    // Если получаем 0x0 кадры (баг драйвера), пробуем понизить разрешение
     if (frame.width == 0 || frame.height == 0) {
-      if (_rawFrameCount == 3 && !_isRestarting) {
+      if (_rawFrameCount >= 3 && !_isRestarting) {
         _isRestarting = true;
-        _log.warn('[Scanner] got 0x0 frame. Restarting camera stream...');
-        _restartCameraStream();
+        if (_currentResolutionIndex < _resolutions.length - 1) {
+          _currentResolutionIndex++;
+          _log.warn('[Scanner] got 0x0 frames. Switching to lower resolution: ${_resolutions[_currentResolutionIndex]}...');
+          _boot();
+        } else {
+          _log.warn('[Scanner] got 0x0 frame. Restarting camera stream...');
+          _restartCameraStream();
+        }
       }
       return;
     }
@@ -268,10 +263,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
           '[Scanner] FIRST NON-EMPTY FRAME: ${frame.width}x${frame.height}');
     }
 
-    // A frame with pixels has arrived. If the watchdog had already shown an
-    // error — because it fired a moment before the driver caught up, or
-    // because a transient stream error was set — clear it. The camera is
-    // working; a stale message would be a lie.
     if (_initError != null) {
       _watchdogTimer?.cancel();
       _watchdogTimer = null;
@@ -347,9 +338,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
       await c.setScanning(false);
       await Future.delayed(const Duration(milliseconds: 500));
       await c.setScanning(true);
-      // Reset counters so the watchdog fires again if the restart did not
-      // change anything. Without this, a restart after a watchdog error
-      // leaves the watchdog with no way to say "still broken".
       _rawFrameCount = 0;
       _nonEmptyFrames = 0;
       _log.info('[Scanner] camera stream restarted');
@@ -540,9 +528,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
                     foregroundColor: const Color(0xFF1C1204),
                   ),
                   onPressed: () {
-                    // _boot() itself resets state, so no need to touch
-                    // _initializing here. Calling it directly re-opens
-                    // the camera and restarts the watchdog.
+                    // Сброс индекса разрешения при ручном повторе по желанию,
+                    // либо оставляем текущий рабочий.
                     _boot();
                   },
                   icon: const Icon(Icons.refresh, size: 16),
