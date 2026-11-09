@@ -169,4 +169,59 @@ extension InventoryOps on AppDatabase {
     }
     return total;
   }
+
+// ─── Дерево номенклатуры ───
+
+/// Прямые дети узла (без рекурсии), группы выше позиций.
+List<InventoryItem> itemsByParent(String? parentId) =>
+    inventoryItems
+        .where((it) => it.parentId == parentId)
+        .toList()
+      ..sort((a, b) {
+        if (a.kind != b.kind) {
+          return a.kind == InventoryItemKind.group ? -1 : 1;
+        }
+        return a.name.compareTo(b.name);
+      });
+
+bool hasItemChildren(String itemId) =>
+    inventoryItems.any((it) => it.parentId == itemId);
+
+/// Все листья (kind == item) рекурсивно под узлом.
+List<InventoryItem> leafDescendants(String itemId) {
+  final result = <InventoryItem>[];
+  void walk(String id) {
+    for (final child in itemsByParent(id)) {
+      if (child.kind == InventoryItemKind.item) {
+        result.add(child);
+      } else {
+        walk(child.id);
+      }
+    }
+  }
+  walk(itemId);
+  return result;
+}
+
+/// Проверка «потомок ли itemId узла ancestorId» (для запрета циклов).
+bool isDescendantOf(String itemId, String ancestorId) {
+  String? current = itemById(itemId)?.parentId;
+  while (current != null) {
+    if (current == ancestorId) return true;
+    current = itemById(current)?.parentId;
+  }
+  return false;
+}
+
+/// Удаление с проверкой «нет детей». Возвращает текст ошибки или null.
+String? deleteInventoryItemSafe(String itemId) {
+  if (hasItemChildren(itemId)) {
+    return 'Сначала удалите или переместите вложенные элементы';
+  }
+  deleteInventoryItem(itemId);
+  return null;
+}
+
+
+  
 }
