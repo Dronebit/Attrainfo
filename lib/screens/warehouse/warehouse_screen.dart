@@ -52,7 +52,7 @@ class _WarehouseScreenState extends State<WarehouseScreen>
                 const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             tabs: const [
               Tab(text: 'Главная'),
-              Tab(text: 'Позиции'),
+              Tab(text: 'Номенклатура'),
               Tab(text: 'Локации'),
               Tab(text: 'Операции'),
             ],
