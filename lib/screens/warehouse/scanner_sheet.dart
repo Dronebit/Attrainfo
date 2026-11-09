@@ -65,7 +65,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   int _rawFrameCount = 0;
   int _nonEmptyFrames = 0;
-  bool? _lastScanningValue;
 
   Timer? _toggleTimer;
   Timer? _fallbackTimer;
@@ -81,10 +80,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
     _boot();
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // Boot — по образцу scan_page.dart
-  // ═══════════════════════════════════════════════════════════════
-
   Future<void> _boot() async {
     _log.info('[Scanner] boot: start');
     try {
@@ -97,7 +92,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
             _initError = 'Нет разрешения на камеру.\n'
                 'Настройки → Приложения → АттраКонтроль → Камера';
           });
-          _log.error('[Scanner] camera permission denied');
         }
         return;
       }
@@ -152,7 +146,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
           'nativeReady=${value.nativeReady} '
           'isInitialized=${value.isInitialized} '
           'modelsLoaded=${value.modelsLoaded} '
-          'scanning=${value.scanning} '
           'previewSize=${value.previewSize?.width}x'
           '${value.previewSize?.height}');
 
@@ -163,7 +156,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
         _initError = value.nativeReady ? null : 'Нативный сканер не загрузился';
       });
 
-      // Через 2 сек после монтирования превью — проверяем, идут ли кадры
+      // Через 2 сек — если кадров нет, принудительно toggle
       _toggleTimer = Timer(const Duration(seconds: 2), () {
         if (!mounted) return;
         if (_rawFrameCount > 0) {
@@ -171,8 +164,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
           return;
         }
         _log.warn('[Scanner] toggle-check: NO frames in 2s, '
-            'scanning=${_controller?.value.scanning}. '
-            'Forcing false -> true');
+            'forcing setScanning false -> true');
         _forceToggleScanning();
       });
 
@@ -188,7 +180,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
         _startGrabFrameFallback();
       });
 
-      // Через 10 сек — если всё ещё ничего, ошибка
+      // Через 10 сек — если всё ещё ничего, показываем ошибку
       _watchdogTimer = Timer(const Duration(seconds: 10), () {
         if (!mounted) return;
         if (_rawFrameCount > 0) {
@@ -196,8 +188,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
               '$_rawFrameCount frames, $_nonEmptyFrames non-empty');
           return;
         }
-        _log.error('[Scanner] watchdog FAIL: '
-            'no frames at all after 10s');
+        _log.error('[Scanner] watchdog FAIL: no frames at all after 10s');
         setState(() {
           _initError = 'Сканер не отдаёт кадры на этом устройстве.\n'
               'Введите код вручную.';
@@ -205,7 +196,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
       });
     } catch (e, st) {
       _log.error('[Scanner] boot failed: $e');
-      _log.error('[Scanner] stack: ${st.toString().split('\n').take(4).join(' | ')}');
+      _log.error('[Scanner] stack: '
+          '${st.toString().split('\n').take(4).join(' | ')}');
       if (!mounted) return;
       setState(() {
         _initializing = false;
@@ -224,16 +216,14 @@ class _ScannerSheetState extends State<_ScannerSheet>
       _log.info('[Scanner] toggle: setScanning(true)');
       await c.setScanning(true);
       await Future.delayed(const Duration(milliseconds: 500));
-      _log.info('[Scanner] toggle done: '
-          'scanning=${c.value.scanning} '
-          'frames=$_rawFrameCount');
+      _log.info('[Scanner] toggle done, frames=$_rawFrameCount');
     } catch (e) {
       _log.error('[Scanner] toggle failed: $e');
     }
   }
 
-  // Fallback: если scanning не работает — берём кадр вручную
-  // и прогоняем через scanPixels(). Медленно, но работает.
+  /// Fallback: если стрим молчит, берём кадр через grabFrame()
+  /// и прогоняем через scanPixels(). Медленно, но работает.
   void _startGrabFrameFallback() {
     _fallbackTimer?.cancel();
     _fallbackTimer = Timer.periodic(
@@ -246,27 +236,34 @@ class _ScannerSheetState extends State<_ScannerSheet>
           _fallbackTimer?.cancel();
           return;
         }
+
+        final controller = _controller;
+        final scanner = _wxScanner;
+        if (controller == null || scanner == null) return;
+
         try {
-          final jpeg = await _controller!.grabFrame();
-          if (jpeg.isEmpty) return;
+          final jpeg = await controller.grabFrame();
+          if (jpeg == null || jpeg.isEmpty) {
+            _log.warn('[Scanner] grabFrame returned null/empty');
+            return;
+          }
           final codec = await ui.instantiateImageCodec(jpeg);
           final frame = await codec.getNextFrame();
           final image = frame.image;
-          final data = await image.toByteData(
+          final ByteData? data = await image.toByteData(
             format: ui.ImageByteFormat.rawRgba,
           );
+          final w = image.width;
+          final h = image.height;
           image.dispose();
           codec.dispose();
+
           if (data == null) return;
           final rgba = data.buffer.asUint8List();
-          final outcome = await _wxScanner!.scanPixels(
-            rgba,
-            image.width,
-            image.height,
-          );
+          final outcome = await scanner.scanPixels(rgba, w, h);
           _onFrame(outcome);
         } catch (e) {
-          _log.warn('[Scanner] grabFrame fallback: $e');
+          _log.warn('[Scanner] grabFrame fallback error: $e');
         }
       },
     );
@@ -298,14 +295,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
   }
 
   void _onControllerChanged() {
-    if (!mounted) return;
-    final v = _controller?.value;
-    if (v != null && _lastScanningValue != v.scanning) {
-      _lastScanningValue = v.scanning;
-      _log.info('[Scanner] scanning -> ${v.scanning} '
-          '(frames so far: $_rawFrameCount)');
-    }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _onFrame(ScanOutcome frame) {
@@ -484,7 +474,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // UI (без изменений)
+  // UI
   // ═══════════════════════════════════════════════════════════════
 
   @override
