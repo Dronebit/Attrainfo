@@ -1,4 +1,6 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_zxing/flutter_zxing.dart';
 import '../../data/debug_log.dart';
 import '../../theme.dart';
@@ -29,16 +31,27 @@ class _ScannerSheet extends StatefulWidget {
 
 class _ScannerSheetState extends State<_ScannerSheet> {
   bool _handled = false;
+  Code? _lastCode; // Для отрисовки AR-рамки
 
   void _onScan(Code code) {
     if (_handled) return;
     if (!code.isValid || code.text == null || code.text!.isEmpty) return;
-    
-    final raw = code.text!;
-    DebugLog.instance.nfc('scanner.detected: $raw');
-    
-    _handled = true;
-    Navigator.pop(context, _makeResult(raw));
+
+    // 1. Вибрация для отклика
+    HapticFeedback.mediumImpact();
+
+    // 2. Сохраняем код, чтобы AR-рамка нарисовалась
+    setState(() {
+      _lastCode = code;
+    });
+
+    // 3. Задержка 300мс, чтобы пользователь увидел зеленую рамку
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _handled = true;
+        Navigator.pop(context, _makeResult(code.text!));
+      }
+    });
   }
 
   ScanResult _makeResult(String raw) {
@@ -124,7 +137,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
             ]),
           ),
           
-          // Камера и рамка
+          // Камера и AR-рамка
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -133,39 +146,56 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
+                    // Камера (скрываем все встроенные кнопки ZXing)
                     ReaderWidget(
                       onScan: _onScan,
-                      showScannerOverlay: false, // Наша рамка
-                      showFlashlight: true,      // Встроенная кнопка фонарика
+                      showScannerOverlay: false, // Убираем статичную рамку ZXing
+                      showFlashlight: false,     // Убираем их кнопку фонарика
                       showGallery: false,
                       showToggleCamera: false,
                     ),
-                    // Наша кастомная золотая рамка
-                    Container(
-                      width: 250,
-                      height: 250,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: AppColors.amb, width: 3),
-                        borderRadius: BorderRadius.circular(16),
+                    
+                    // Наша статичная рамка (показывается, пока код не найден)
+                    if (_lastCode == null)
+                      Container(
+                        width: 250,
+                        height: 250,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.amb, width: 3),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
-                    ),
+                      
+                    // AR-рамка (появляется, когда код распознан)
+                    if (_lastCode != null && _lastCode!.position != null)
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _ArOverlayPainter(_lastCode!.position),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
           ),
 
-          // Нижняя панель (своя кнопка "Вручную")
+          // Нижняя панель с кнопкой ручного ввода
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             child: Column(children: [
-              const Text(
-                'Наведите на QR полки или позиции',
-                style: TextStyle(fontSize: 12, color: AppColors.mut),
+              Text(
+                _lastCode == null 
+                  ? 'Наведите на QR полки или позиции'
+                  : 'Код распознан!',
+                style: TextStyle(
+                  fontSize: 12, 
+                  color: _lastCode == null ? AppColors.mut : AppColors.grn,
+                  fontWeight: _lastCode == null ? FontWeight.normal : FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               SizedBox(
-                width: double.infinity, // кнопка на всю ширину
+                width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: _manualInput,
                   icon: const Icon(Icons.keyboard, size: 16),
@@ -178,4 +208,56 @@ class _ScannerSheetState extends State<_ScannerSheet> {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// AR-Оверлей для отрисовки зеленой рамки поверх кода
+// ─────────────────────────────────────────────────────────────
+class _ArOverlayPainter extends CustomPainter {
+  final Rect? position;
+  _ArOverlayPainter(this.position);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (position == null) return;
+
+    // Красивое свечение
+    final glowPaint = Paint()
+      ..color = AppColors.grn.withValues(alpha: 0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+    // Четкая линия
+    final paint = Paint()
+      ..color = AppColors.grn
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
+
+    // Рисуем прямоугольник вокруг кода (с небольшим отступом)
+    final rect = Rect.fromLTRB(
+      position!.left - 4,
+      position!.top - 4,
+      position!.right + 4,
+      position!.bottom + 4,
+    );
+
+    canvas.drawRect(rect, glowPaint);
+    canvas.drawRect(rect, paint);
+
+    // Рисуем AR-уголки
+    const len = 20.0;
+    _drawCorner(canvas, rect.topLeft, 1, 1, paint);
+    _drawCorner(canvas, rect.topRight, -1, 1, paint);
+    _drawCorner(canvas, rect.bottomLeft, 1, -1, paint);
+    _drawCorner(canvas, rect.bottomRight, -1, -1, paint);
+  }
+
+  void _drawCorner(Canvas canvas, Offset p, double dx, double dy, Paint paint) {
+    canvas.drawLine(p, p + Offset(20 * dx, 0), paint);
+    canvas.drawLine(p, p + Offset(0, 20 * dy), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ArOverlayPainter oldDelegate) => oldDelegate.position != position;
 }
