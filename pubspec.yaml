@@ -9,8 +9,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-    
-  
   provider: ^6.1.2
   intl: ^0.19.0
   fl_chart: ^0.68.0
@@ -19,6 +17,7 @@ dependencies:
   url_launcher: ^6.3.0
   wxscan_live: ^0.1.7
   qr_flutter: ^4.1.0      
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
