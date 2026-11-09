@@ -1,22 +1,33 @@
-import 'dart:ui';
+import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_zxing/flutter_zxing.dart';
+import 'package:flutter/services.dart' show HapticFeedback, rootBundle;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:wxscan_live/wxscan_live.dart' as wx;
+
 import '../../data/app_database.dart';
 import '../../models/inventory.dart';
 import '../../theme.dart';
 
-class ScanResult {
+// ═══════════════════════════════════════════════════════════════════
+// Публичный API (совместим с предыдущим)
+// ═══════════════════════════════════════════════════════════════════
+
+class AppScanResult {
   final String raw;
   final ScanKind kind;
   final String code;
-  const ScanResult(this.raw, this.kind, this.code);
+  const AppScanResult(this.raw, this.kind, this.code);
 }
 
 enum ScanKind { location, item, unknown }
 
-Future<ScanResult?> showScannerSheet(BuildContext context, AppDatabase db) {
-  return showModalBottomSheet<ScanResult>(
+Future<AppScanResult?> showScannerSheet(
+  BuildContext context,
+  AppDatabase db,
+) {
+  return showModalBottomSheet<AppScanResult>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -24,42 +35,114 @@ Future<ScanResult?> showScannerSheet(BuildContext context, AppDatabase db) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Экран сканера
+// ═══════════════════════════════════════════════════════════════════
+
 class _ScannerSheet extends StatefulWidget {
   final AppDatabase db;
   const _ScannerSheet({required this.db});
+
   @override
   State<_ScannerSheet> createState() => _ScannerSheetState();
 }
 
-class _ScannerSheetState extends State<_ScannerSheet> {
+class _ScannerSheetState extends State<_ScannerSheet>
+    with WidgetsBindingObserver {
+  late final wx.WxScanController _controller;
+
+  // Состояние «зафиксировали код»
   bool _isProcessing = false;
-  
-  // Найденные объекты
+  String? _rawCodeString;
   InventoryItem? _foundItem;
   StorageLocation? _foundLoc;
-  String? _rawCodeString;
 
-  // Регионы для отрисовки рамок (AR)
-  List<CodeHitRegion> _hitRegions = [];
+  // Активные рамки AR
+  List<wx.ScanResult> _liveResults = [];
 
-  void _onMultiScan(Codes codes, Size widgetSize) {
-    if (codes.codes.isEmpty) {
-      if (_hitRegions.isNotEmpty) setState(() => _hitRegions = []);
-      return;
+  // Загрузка моделей
+  bool _initializing = true;
+  String? _initError;
+
+  // Чтобы не плодить вызовы setState на каждом кадре
+  DateTime _lastHaptic = DateTime.fromMillisecondsSinceEpoch(0);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _controller = wx.WxScanController(resolution: wx.WxResolution.p720);
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          setState(() {
+            _initializing = false;
+            _initError = 'Нет разрешения на камеру.\n'
+                'Настройки → Приложения → АттраКонтроль → Камера';
+          });
+        }
+        return;
+      }
+
+      final detectModel = await _loadAsset('assets/models/detect.tflite');
+      final srModel = await _loadAsset('assets/models/sr.tflite');
+
+      await _controller.initialize(
+        detectModel: detectModel,
+        srModel: srModel,
+      );
+
+      _controller.scans.listen(_onScanFrame);
+
+      if (mounted) {
+        setState(() => _initializing = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _initializing = false;
+          _initError = 'Ошибка инициализации сканера:\n$e';
+        });
+      }
     }
+  }
 
-    // 1. Обновляем рамки для ВСЕХ найденных кодов (трекинг)
-    final regions = codeHitRegions(codes.codes, widgetSize);
-    
-    // 2. Если мы еще не зафиксировали объект, пытаемся найти его в базе
+  Future<Uint8List> _loadAsset(String path) async {
+    final data = await rootBundle.load(path);
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+
+  void _onScanFrame(wx.ScanOutcome outcome) {
+    if (!mounted) return;
+
+    final results = outcome.results;
+
+    // Обновляем «живые» рамки только если ещё не зафиксировали объект
     if (!_isProcessing) {
-      // Берем первый валидный код
-      final validCode = codes.codes.firstWhere((c) => c.isValid && c.text != null && c.text!.isNotEmpty, orElse: () => Code());
-      
-      if (validCode.isValid && validCode.text != null) {
-        HapticFeedback.mediumImpact();
-        
-        final raw = validCode.text!;
+      // ищем первый валидный код
+      wx.ScanResult? valid;
+      for (final r in results) {
+        final txt = r.text;
+        if (txt != null && txt.isNotEmpty) {
+          valid = r;
+          break;
+        }
+      }
+
+      if (valid != null && valid.text != null) {
+        // вибро-отклик не чаще раза в секунду
+        final now = DateTime.now();
+        if (now.difference(_lastHaptic).inMilliseconds > 800) {
+          _lastHaptic = now;
+          HapticFeedback.mediumImpact();
+        }
+
+        final raw = valid.text!;
         String searchCode = raw;
         ScanKind kind = ScanKind.unknown;
 
@@ -75,44 +158,54 @@ class _ScannerSheetState extends State<_ScannerSheet> {
         StorageLocation? loc;
 
         if (kind == ScanKind.location) {
-          loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+          loc = widget.db.storageLocations
+              .where((l) =>
+                  l.code.toLowerCase() == searchCode.toLowerCase())
+              .firstOrNull;
         } else if (kind == ScanKind.item) {
-          item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+          item = widget.db.inventoryItems
+              .where((i) =>
+                  i.kind == InventoryItemKind.item &&
+                  i.sku.toLowerCase() == searchCode.toLowerCase())
+              .firstOrNull;
         } else {
-          loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+          loc = widget.db.storageLocations
+              .where((l) =>
+                  l.code.toLowerCase() == searchCode.toLowerCase())
+              .firstOrNull;
           if (loc == null) {
-            item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+            item = widget.db.inventoryItems
+                .where((i) =>
+                    i.kind == InventoryItemKind.item &&
+                    i.sku.toLowerCase() == searchCode.toLowerCase())
+                .firstOrNull;
           }
         }
 
-        // Если код распознан (даже если не найден в БД), фиксируем состояние
-        _isProcessing = true;
-        _rawCodeString = raw;
-        _foundItem = item;
-        _foundLoc = loc;
+        setState(() {
+          _isProcessing = true;
+          _rawCodeString = raw;
+          _foundItem = item;
+          _foundLoc = loc;
+          _liveResults = results;
+        });
+        return;
       }
     }
 
-    // Обновляем стейт с новыми рамками и (возможно) карточкой
+    // Пока не зафиксировали — обновляем рамки каждый кадр
     setState(() {
-      _hitRegions = regions;
+      _liveResults = results;
     });
-  }
-
-  void _onScanFailure(Code code) {
-    // Если код потерян из виду — убираем рамку
-    if (mounted && _hitRegions.isNotEmpty) {
-      setState(() => _hitRegions = []);
-    }
   }
 
   void _resetScanner() {
     setState(() {
       _isProcessing = false;
+      _rawCodeString = null;
       _foundItem = null;
       _foundLoc = null;
-      _rawCodeString = null;
-      _hitRegions = [];
+      _liveResults = [];
     });
   }
 
@@ -127,7 +220,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
       kind = ScanKind.item;
       code = code.substring(4);
     }
-    Navigator.pop(context, ScanResult(_rawCodeString!, kind, code));
+    Navigator.pop(context, AppScanResult(_rawCodeString!, kind, code));
   }
 
   Future<void> _manualInput() async {
@@ -146,9 +239,15 @@ class _ScannerSheetState extends State<_ScannerSheet> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.amb, foregroundColor: const Color(0xFF1C1204)),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.amb,
+              foregroundColor: const Color(0xFF1C1204),
+            ),
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('OK'),
           ),
@@ -157,12 +256,30 @@ class _ScannerSheetState extends State<_ScannerSheet> {
     );
     if (ok == null || ok.isEmpty) return;
     if (!mounted) return;
-    
-    Navigator.pop(context, ScanResult(
-      ok, 
-      ok.startsWith('LOC:') ? ScanKind.location : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown), 
-      ok.replaceAll(RegExp(r'^(LOC:|SKU:)'), '')
-    ));
+
+    Navigator.pop(
+      context,
+      AppScanResult(
+        ok,
+        ok.startsWith('LOC:')
+            ? ScanKind.location
+            : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown),
+        ok.replaceAll(RegExp(r'^(LOC:|SKU:)'), ''),
+      ),
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Экономим батарею: останавливаем сканирование в фоне
+    _controller.setScanning(state == AppLifecycleState.resumed);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -178,121 +295,247 @@ class _ScannerSheetState extends State<_ScannerSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
-          // Заголовок
+          // ручка
           Container(
             margin: const EdgeInsets.only(top: 8),
             width: 40,
             height: 4,
-            decoration: BoxDecoration(color: AppColors.line2, borderRadius: BorderRadius.circular(2)),
+            decoration: BoxDecoration(
+              color: AppColors.line2,
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
+          // заголовок
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(children: [
-              const Icon(Icons.qr_code_scanner, size: 20, color: AppColors.amb),
+              const Icon(Icons.qr_code_scanner,
+                  size: 20, color: AppColors.amb),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text('Сканирование', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                child: Text('Сканирование',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
               ),
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              ),
             ]),
           ),
-          
-          // Камера и оверлеи
+
+          // Камера
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // 1. Камера
-                        ReaderWidget(
-                          showScannerOverlay: false, // Отключаем встроенную рамку ZXing
-                          showFlashlight: true,
-                          showGallery: false,
-                          showToggleCamera: false,
-                          isMultiScan: true,         // Включаем мульти-скан для трекинга
-                          onMultiScan: (codes) => _onMultiScan(codes, constraints.biggest),
-                          onScanFailure: _onScanFailure,
-                        ),
-                        
-                        // 2. Статичная рамка прицела (когда объект еще не зафиксирован)
-                        if (!_isProcessing)
-                          Container(
-                            width: 250,
-                            height: 250,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: AppColors.amb, width: 3),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          
-                        // 3. AR-рамки (отрисовываем поверх камеры)
-                        if (_hitRegions.isNotEmpty)
-                          Positioned.fill(
-                            child: IgnorePointer( // Чтобы не блокировать нажатия
-                              child: CustomPaint(
-                                painter: _TrackingOverlayPainter(_hitRegions),
-                              ),
-                            ),
-                          ),
-
-                        // 4. Всплывающая карточка
-                        if (_isProcessing)
-                          Positioned(
-                            left: 16,
-                            right: 16,
-                            bottom: 20,
-                            child: _buildFloatingCard(),
-                          ),
-                      ],
-                    );
-                  }
-                ),
+                child: _buildCameraArea(),
               ),
             ),
           ),
 
           // Нижняя панель
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-            child: Column(children: [
-              Text(
-                _isProcessing ? 'Подтвердите выбор' : 'Наведите на QR полки или позиции',
-                style: TextStyle(
-                  fontSize: 12, 
-                  color: _isProcessing ? AppColors.amb : AppColors.mut,
-                  fontWeight: _isProcessing ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _isProcessing ? _resetScanner : _manualInput,
-                  icon: Icon(_isProcessing ? Icons.refresh : Icons.keyboard, size: 16),
-                  label: Text(_isProcessing ? 'Сканировать другое' : 'Ввести код вручную'),
-                ),
-              ),
-            ]),
-          ),
+          _buildBottomPanel(),
         ]),
       ),
     );
   }
 
-  // ─── ВСПЛЫВАЮЩАЯ КАРТОЧКА ───
+  // ─── Зона камеры ───
+
+  Widget _buildCameraArea() {
+    if (_initError != null) {
+      return Container(
+        color: const Color(0xFF0E1420),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.videocam_off, size: 48, color: AppColors.red),
+            const SizedBox(height: 12),
+            const Text('Камера недоступна',
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Text(_initError!,
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontSize: 12, color: AppColors.mut)),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.amb,
+                foregroundColor: const Color(0xFF1C1204),
+              ),
+              onPressed: _manualInput,
+              icon: const Icon(Icons.keyboard, size: 16),
+              label: const Text('Ввести код вручную'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_initializing) {
+      return const ColoredBox(
+        color: Color(0xFF0E1420),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return ValueListenableBuilder<wx.WxScanValue>(
+      valueListenable: _controller,
+      builder: (context, value, _) {
+        final previewSize = value.previewSize;
+        if (previewSize == null) {
+          return const ColoredBox(
+            color: Color(0xFF0E1420),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        return LayoutBuilder(builder: (context, constraints) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. Превью с корректным поворотом
+              ClipRect(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: previewSize.rotatedWidth.toDouble(),
+                    height: previewSize.rotatedHeight.toDouble(),
+                    child: RotatedBox(
+                      quarterTurns: previewSize.quarterTurns,
+                      child: SizedBox(
+                        width: previewSize.width.toDouble(),
+                        height: previewSize.height.toDouble(),
+                        child: wx.WxScanPreview(controller: _controller),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // 2. Прицел, если объект ещё не найден
+              if (!_isProcessing)
+                Center(
+                  child: Container(
+                    width: 250,
+                    height: 250,
+                    decoration: BoxDecoration(
+                      border:
+                          Border.all(color: AppColors.amb, width: 3),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+
+              // 3. AR-рамки по найденным кодам
+              if (_liveResults.isNotEmpty)
+                IgnorePointer(
+                  child: CustomPaint(
+                    painter: _TrackingPainter(
+                      results: _liveResults,
+                      previewSize: previewSize,
+                    ),
+                  ),
+                ),
+
+              // 4. Всплывающая карточка
+              if (_isProcessing)
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                  child: _buildFloatingCard(),
+                ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  // ─── Нижняя панель ───
+
+  Widget _buildBottomPanel() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(children: [
+        Text(
+          _isProcessing
+              ? 'Подтвердите выбор'
+              : (_initError != null
+                  ? 'Введите код вручную'
+                  : 'Наведите на QR полки или позиции'),
+          style: TextStyle(
+            fontSize: 12,
+            color: _isProcessing ? AppColors.amb : AppColors.mut,
+            fontWeight: _isProcessing ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(children: [
+          // Фонарик (только если камера доступна)
+          if (_initError == null && !_initializing) ...[
+            ValueListenableBuilder<wx.WxScanValue>(
+              valueListenable: _controller,
+              builder: (context, value, _) {
+                if (!value.hasTorch) return const SizedBox.shrink();
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          _controller.setTorch(!value.torchEnabled),
+                      icon: Icon(
+                        value.torchEnabled
+                            ? Icons.flashlight_on
+                            : Icons.flashlight_off,
+                        size: 16,
+                      ),
+                      label: Text(
+                          value.torchEnabled ? 'Свет вкл' : 'Свет'),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _isProcessing ? _resetScanner : _manualInput,
+              icon: Icon(
+                _isProcessing ? Icons.refresh : Icons.keyboard,
+                size: 16,
+              ),
+              label: Text(
+                _isProcessing
+                    ? 'Сканировать другое'
+                    : 'Ввести вручную',
+              ),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  // ─── Всплывающая карточка ───
+
   Widget _buildFloatingCard() {
     final isFound = _foundItem != null || _foundLoc != null;
-    final title = _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
-    
-    final subtitle = _foundItem != null 
-        ? '${_foundItem!.sku} · Остаток: ${widget.db.stockTotal(_foundItem!.id)} ${_foundItem!.unit.label}'
-        : (_foundLoc != null 
-            ? 'Локация: ${_foundLoc!.code}' 
+    final title =
+        _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
+
+    final subtitle = _foundItem != null
+        ? '${_foundItem!.sku} · Остаток: '
+            '${widget.db.stockTotal(_foundItem!.id)} '
+            '${_foundItem!.unit.label}'
+        : (_foundLoc != null
+            ? 'Локация: ${_foundLoc!.code}'
             : (_rawCodeString ?? 'Неизвестный код'));
 
     return Container(
@@ -300,7 +543,11 @@ class _ScannerSheetState extends State<_ScannerSheet> {
       decoration: BoxDecoration(
         color: AppColors.panel,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isFound ? AppColors.grn.withValues(alpha: 0.5) : AppColors.red.withValues(alpha: 0.5)),
+        border: Border.all(
+          color: isFound
+              ? AppColors.grn.withValues(alpha: 0.5)
+              : AppColors.red.withValues(alpha: 0.5),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -312,33 +559,41 @@ class _ScannerSheetState extends State<_ScannerSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Icon(
-                isFound ? ( _foundLoc != null ? Icons.inventory_2_outlined : Icons.check_circle_outline) : Icons.error_outline,
-                color: isFound ? AppColors.grn : AppColors.red,
-                size: 24,
+          Row(children: [
+            Icon(
+              isFound
+                  ? (_foundLoc != null
+                      ? Icons.inventory_2_outlined
+                      : Icons.check_circle_outline)
+                  : Icons.error_outline,
+              color: isFound ? AppColors.grn : AppColors.red,
+              size: 24,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.dim),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, 
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(subtitle, 
-                      style: const TextStyle(fontSize: 11, color: AppColors.dim),
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (isFound)
+            ),
+          ]),
+          if (isFound) ...[
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
@@ -348,71 +603,84 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
                 onPressed: _confirmSelection,
-                child: const Text('Выбрать', style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text('Выбрать',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
               ),
             ),
+          ],
         ],
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Painter для отрисовки AR-рамок
-// ─────────────────────────────────────────────────────────────
-class _TrackingOverlayPainter extends CustomPainter {
-  final List<CodeHitRegion> regions;
+// ═══════════════════════════════════════════════════════════════════
+// AR-оверлей
+// ═══════════════════════════════════════════════════════════════════
 
-  _TrackingOverlayPainter(this.regions);
+class _TrackingPainter extends CustomPainter {
+  final List<wx.ScanResult> results;
+  final wx.WxPreviewSize previewSize;
+
+  _TrackingPainter({required this.results, required this.previewSize});
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Полупрозрачная заливка
+    // Коэффициенты масштаба для BoxFit.cover
+    final scale = math.max(
+      size.width / previewSize.rotatedWidth,
+      size.height / previewSize.rotatedHeight,
+    );
+    final dx = (size.width - previewSize.rotatedWidth * scale) / 2;
+    final dy = (size.height - previewSize.rotatedHeight * scale) / 2;
+
     final fillPaint = Paint()
       ..color = AppColors.grn.withValues(alpha: 0.2)
       ..style = PaintingStyle.fill;
 
-    // Яркая обводка
-    final borderPaint = Paint()
-      ..color = AppColors.grn
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
-
-    // Свечение
     final glowPaint = Paint()
       ..color = AppColors.grn.withValues(alpha: 0.4)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 8.0
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
-    for (final region in regions) {
-      final rect = region.rect;
+    final borderPaint = Paint()
+      ..color = AppColors.grn
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
 
-      // 1. Полупрозрачный фон
-      canvas.drawRect(rect, fillPaint);
-      
-      // 2. Свечение
-      canvas.drawRect(rect, glowPaint);
-      
-      // 3. Четкая рамка
-      canvas.drawRect(rect, borderPaint);
+    for (final result in results) {
+      final frameRect = result.boundingBox;
+      if (frameRect == null) continue;
 
-      // 4. Уголки (опционально для красоты)
-      _drawCorner(canvas, rect.topLeft, 1, 1, borderPaint);
-      _drawCorner(canvas, rect.topRight, -1, 1, borderPaint);
-      _drawCorner(canvas, rect.bottomLeft, 1, -1, borderPaint);
-      _drawCorner(canvas, rect.bottomRight, -1, -1, borderPaint);
+      final screenRect = Rect.fromLTWH(
+        dx + frameRect.left * scale,
+        dy + frameRect.top * scale,
+        frameRect.width * scale,
+        frameRect.height * scale,
+      );
+
+      canvas.drawRect(screenRect, fillPaint);
+      canvas.drawRect(screenRect, glowPaint);
+      canvas.drawRect(screenRect, borderPaint);
+
+      // Уголки для AR-эффекта
+      _drawCorner(canvas, screenRect.topLeft, 1, 1, borderPaint);
+      _drawCorner(canvas, screenRect.topRight, -1, 1, borderPaint);
+      _drawCorner(canvas, screenRect.bottomLeft, 1, -1, borderPaint);
+      _drawCorner(canvas, screenRect.bottomRight, -1, -1, borderPaint);
     }
   }
 
-  void _drawCorner(Canvas canvas, Offset p, double dx, double dy, Paint paint) {
+  void _drawCorner(
+      Canvas canvas, Offset p, double dx, double dy, Paint paint) {
     const len = 15.0;
     canvas.drawLine(p, p + Offset(len * dx, 0), paint);
     canvas.drawLine(p, p + Offset(0, len * dy), paint);
   }
 
   @override
-  bool shouldRepaint(covariant _TrackingOverlayPainter oldDelegate) {
-    return oldDelegate.regions != regions;
+  bool shouldRepaint(covariant _TrackingPainter oldDelegate) {
+    return oldDelegate.results != results;
   }
 }
