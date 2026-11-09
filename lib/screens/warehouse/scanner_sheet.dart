@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, rootBundle;
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:wxscan/wxscan.dart' show WxScanner;
 import 'package:wxscan_live/wxscan_live.dart';
 
 import '../../data/app_database.dart';
@@ -52,6 +55,7 @@ class _ScannerSheet extends StatefulWidget {
 class _ScannerSheetState extends State<_ScannerSheet>
     with WidgetsBindingObserver {
   WxScanController? _controller;
+  WxScanner? _wxScanner;
   StreamSubscription<ScanOutcome>? _sub;
 
   bool _isProcessing = false;
@@ -67,7 +71,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   DateTime _lastHaptic = DateTime.fromMillisecondsSinceEpoch(0);
 
-  // Счётчик кадров для отладки
   int _frameCount = 0;
   bool _firstFrameLogged = false;
 
@@ -81,6 +84,10 @@ class _ScannerSheetState extends State<_ScannerSheet>
     _boot();
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // Загрузка: модели → WxScanner → WxScanController
+  // ─────────────────────────────────────────────────────────────
+
   Future<void> _boot() async {
     _log.info('[Scanner] boot: start');
     try {
@@ -91,40 +98,56 @@ class _ScannerSheetState extends State<_ScannerSheet>
         if (mounted) {
           setState(() {
             _initializing = false;
-            _initError =
-                'Нет разрешения на камеру.\nНастройки → Приложения → АттраКонтроль → Камера';
+            _initError = 'Нет разрешения на камеру.\n'
+                'Настройки → Приложения → АттраКонтроль → Камера';
           });
           _log.error('[Scanner] camera permission denied');
         }
         return;
       }
 
-      // 2. Модели из assets
-      _log.info('[Scanner] loading detect.tflite...');
-      final detectModel = await _loadAsset('assets/models/detect.tflite');
-      _log.info('[Scanner] detect.tflite size=${detectModel.length} bytes');
+      // 2. Копируем модели на диск, получаем пути
+      _log.info('[Scanner] copying models to disk...');
+      final (detectPath, srPath) = await _prepareModels();
+      _log.info('[Scanner] detect path: $detectPath');
+      _log.info('[Scanner] sr path: $srPath');
 
-      _log.info('[Scanner] loading sr.tflite...');
-      final srModel = await _loadAsset('assets/models/sr.tflite');
-      _log.info('[Scanner] sr.tflite size=${srModel.length} bytes');
+      final detectSize = await File(detectPath).length();
+      final srSize = await File(srPath).length();
+      _log.info('[Scanner] detect.tflite size=$detectSize bytes');
+      _log.info('[Scanner] sr.tflite size=$srSize bytes');
 
-      if (detectModel.isEmpty || srModel.isEmpty) {
-        _log.error(
-            '[Scanner] model file is empty — проверьте assets/models/ и pubspec.yaml');
+      if (detectSize == 0 || srSize == 0) {
+        _log.error('[Scanner] model file is empty — проверьте assets/models/');
       }
 
-      // 3. Контроллер
-      _log.info('[Scanner] creating WxScanController...');
-      final controller = WxScanController(resolution: WxResolution.p720);
+      // 3. Создаём WxScanner (движок декодирования, разделяется с контроллером)
+      _log.info('[Scanner] WxScanner.create()...');
+      final wxScanner = await WxScanner.create(
+        detectModelPath: detectPath,
+        srModelPath: srPath,
+      );
+      _wxScanner = wxScanner;
+      _log.info('[Scanner] WxScanner ready: '
+          'hasDetector=${wxScanner.hasDetector} '
+          'hasSuperResolution=${wxScanner.hasSuperResolution}');
 
+      // 4. Создаём контроллер камеры, передаём готовый сканер
+      _log.info('[Scanner] creating WxScanController...');
+      final controller = WxScanController(
+        scanner: wxScanner,
+        resolution: WxResolution.p720,
+      );
+
+      // 5. Инициализируем контроллер
       _log.info('[Scanner] controller.initialize()...');
       await controller.initialize(
-        detectModel: detectModel,
-        srModel: srModel,
+        detectModelPath: detectPath,
+        srModelPath: srPath,
       );
       _log.info('[Scanner] controller.initialize() done');
 
-      // 4. Торч
+      // 6. Торч
       final hasTorch = await controller.hasTorch();
       _log.info('[Scanner] hasTorch=$hasTorch');
 
@@ -134,16 +157,21 @@ class _ScannerSheetState extends State<_ScannerSheet>
         return;
       }
 
-      // 5. Подписка и listener
+      // 7. Подписка на кадры
       controller.addListener(_onControllerChanged);
-      _sub = controller.scans.listen(_onFrame, onError: (Object e, StackTrace st) {
-        _log.error('[Scanner] stream error: $e');
-        _log.error('[Scanner] stack: ${st.toString().split('\n').take(3).join(' | ')}');
-      });
+      _sub = controller.scans.listen(
+        _onFrame,
+        onError: (Object e, StackTrace st) {
+          _log.error('[Scanner] stream error: $e');
+          _log.error(
+              '[Scanner] stack: ${st.toString().split('\n').take(3).join(' | ')}');
+        },
+      );
       _log.info('[Scanner] scans stream subscribed');
 
       final value = controller.value;
-      _log.info('[Scanner] value: nativeReady=${value.nativeReady} '
+      _log.info('[Scanner] value: '
+          'nativeReady=${value.nativeReady} '
           'isInitialized=${value.isInitialized} '
           'modelsLoaded=${value.modelsLoaded} '
           'torchEnabled=${value.torchEnabled} '
@@ -172,21 +200,49 @@ class _ScannerSheetState extends State<_ScannerSheet>
     }
   }
 
-  Future<Uint8List> _loadAsset(String path) async {
-    final data = await rootBundle.load(path);
-    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  /// Копирует `.tflite` из bundle на диск и возвращает пути.
+  Future<(String, String)> _prepareModels() async {
+    final dir = await getApplicationDocumentsDirectory();
+
+    Future<String> install(String name) async {
+      final file = File('${dir.path}/$name');
+      final asset = 'assets/models/$name';
+      final expectedLen =
+          (await rootBundle.load(asset)).lengthInBytes;
+
+      // Копируем, если файла нет или размер не совпадает (например,
+      // после обновления моделей в assets).
+      if (await file.exists()) {
+        final actualLen = await file.length();
+        if (actualLen == expectedLen) return file.path;
+        _log.warn('[Scanner] $name size mismatch '
+            '($actualLen != $expectedLen) — recopy');
+      }
+
+      final data = await rootBundle.load(asset);
+      final bytes = data.buffer
+          .asUint8List(data.offsetInBytes, data.lengthInBytes);
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path;
+    }
+
+    final detectPath = await install('detect.tflite');
+    final srPath = await install('sr.tflite');
+    return (detectPath, srPath);
   }
 
   void _onControllerChanged() {
     if (mounted) setState(() {});
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // Обработка кадра
+  // ─────────────────────────────────────────────────────────────
+
   void _onFrame(ScanOutcome frame) {
     if (!mounted) return;
 
     _frameCount++;
-
-    // Логируем: первый кадр, каждый 30-й кадр, и любой кадр с результатами
     final hasResults = frame.results.isNotEmpty;
     final hasCandidates = frame.candidates.isNotEmpty;
 
@@ -197,7 +253,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
           'results=${frame.results.length} '
           'candidates=${frame.candidates.length} '
           'hasUndecodable=${frame.hasUndecodable}');
-    } else if (hasResults || (_frameCount % 30 == 0 && hasCandidates)) {
+    } else if (hasResults ||
+        (_frameCount % 30 == 0 && hasCandidates)) {
       _log.info('[Scanner] frame #$_frameCount '
           'results=${frame.results.length} '
           'candidates=${frame.candidates.length} '
@@ -211,9 +268,10 @@ class _ScannerSheetState extends State<_ScannerSheet>
     }
 
     if (_isProcessing) return;
+
     if (!hasResults) {
-      // Обновляем живые рамки только если не зафиксировали
-      if (frame.candidates.isNotEmpty) {
+      // Показываем живые рамки по candidates (видит, но не декодировал)
+      if (hasCandidates && mounted) {
         setState(() => _lastFrame = frame);
       }
       return;
@@ -374,8 +432,13 @@ class _ScannerSheetState extends State<_ScannerSheet>
     _sub?.cancel();
     _controller?.removeListener(_onControllerChanged);
     _controller?.dispose();
+    _wxScanner?.dispose();
     super.dispose();
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // UI
+  // ─────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -390,6 +453,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
+          // ручка
           Container(
             margin: const EdgeInsets.only(top: 8),
             width: 40,
@@ -399,6 +463,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
               borderRadius: BorderRadius.circular(2),
             ),
           ),
+          // заголовок
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(children: [
@@ -416,6 +481,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
               ),
             ]),
           ),
+          // камера
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -431,8 +497,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
     );
   }
 
-  // ─── Камера ───
-
   Widget _buildCameraArea() {
     if (_initError != null) {
       return Container(
@@ -441,15 +505,17 @@ class _ScannerSheetState extends State<_ScannerSheet>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.videocam_off, size: 48, color: AppColors.red),
+            const Icon(Icons.videocam_off,
+                size: 48, color: AppColors.red),
             const SizedBox(height: 12),
             const Text('Камера недоступна',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Text(_initError!,
                 textAlign: TextAlign.center,
-                style:
-                    const TextStyle(fontSize: 12, color: AppColors.mut)),
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.mut)),
             const SizedBox(height: 16),
             FilledButton.icon(
               style: FilledButton.styleFrom(
@@ -486,6 +552,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
         return Stack(
           fit: StackFit.expand,
           children: [
+            // Превью
             ClipRect(
               child: FittedBox(
                 fit: BoxFit.cover,
@@ -497,15 +564,18 @@ class _ScannerSheetState extends State<_ScannerSheet>
                     child: SizedBox(
                       width: previewSize.width.toDouble(),
                       height: previewSize.height.toDouble(),
-                      child: WxScanPreview(controller: _controller!),
+                      child:
+                          WxScanPreview(controller: _controller!),
                     ),
                   ),
                 ),
               ),
             ),
 
-            // AR-рамки (правильная отрисовка через _coverFit)
-            if (_lastFrame != null && _lastFrame!.results.isNotEmpty)
+            // AR-рамки найденных/кандидатов
+            if (_lastFrame != null &&
+                (_lastFrame!.results.isNotEmpty ||
+                    _lastFrame!.candidates.isNotEmpty))
               IgnorePointer(
                 child: CustomPaint(
                   size: Size.infinite,
@@ -515,19 +585,21 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
             // Прицел, пока ничего не нашли
             if (!_isProcessing &&
-                (_lastFrame == null || _lastFrame!.results.isEmpty))
+                (_lastFrame == null ||
+                    _lastFrame!.results.isEmpty))
               Center(
                 child: Container(
                   width: 250,
                   height: 250,
                   decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.amb, width: 3),
+                    border:
+                        Border.all(color: AppColors.amb, width: 3),
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
               ),
 
-            // Всплывающая карточка
+            // Всплывающая карточка после распознавания
             if (_isProcessing)
               Positioned(
                 left: 16,
@@ -540,8 +612,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
       },
     );
   }
-
-  // ─── Нижняя панель ───
 
   Widget _buildBottomPanel() {
     return Padding(
@@ -556,7 +626,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
           style: TextStyle(
             fontSize: 12,
             color: _isProcessing ? AppColors.amb : AppColors.mut,
-            fontWeight: _isProcessing ? FontWeight.bold : FontWeight.normal,
+            fontWeight:
+                _isProcessing ? FontWeight.bold : FontWeight.normal,
           ),
         ),
         const SizedBox(height: 10),
@@ -593,7 +664,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
                 size: 16,
               ),
               label: Text(
-                _isProcessing ? 'Сканировать другое' : 'Ввести вручную',
+                _isProcessing
+                    ? 'Сканировать другое'
+                    : 'Ввести вручную',
               ),
             ),
           ),
@@ -601,8 +674,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
       ]),
     );
   }
-
-  // ─── Карточка ───
 
   Widget _buildFloatingCard() {
     final isFound = _foundItem != null || _foundLoc != null;
@@ -694,7 +765,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// AR-оверлей — как в официальном _CodeMarkerPainter
+// AR-оверлей — по corners с масштабом BoxFit.cover
 // ═══════════════════════════════════════════════════════════════════
 
 class _CodeMarkerPainter extends CustomPainter {
@@ -706,15 +777,17 @@ class _CodeMarkerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (frame.results.isEmpty || frame.width == 0 || frame.height == 0) {
-      return;
-    }
+    if (frame.width == 0 || frame.height == 0) return;
+    if (frame.results.isEmpty && frame.candidates.isEmpty) return;
 
-    // Масштаб для BoxFit.cover — как в официальном примере
     final scale =
         math.max(size.width / frame.width, size.height / frame.height);
     final dx = (size.width - frame.width * scale) / 2;
     final dy = (size.height - frame.height * scale) / 2;
+
+    final fillPaint = Paint()
+      ..color = AppColors.grn.withValues(alpha: 0.2)
+      ..style = PaintingStyle.fill;
 
     final glowPaint = Paint()
       ..color = AppColors.grn.withValues(alpha: 0.4)
@@ -722,39 +795,27 @@ class _CodeMarkerPainter extends CustomPainter {
       ..strokeWidth = 8.0
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
-    final fillPaint = Paint()
-      ..color = AppColors.grn.withValues(alpha: 0.2)
-      ..style = PaintingStyle.fill;
-
     final borderPaint = Paint()
       ..color = AppColors.grn
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3;
 
+    final candidatePaint = Paint()
+      ..color = AppColors.amb.withValues(alpha: 0.7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    // Успешно декодированные
     for (final r in frame.results) {
       if (r.corners.length < 4) continue;
+      final path = _buildPath(r, scale, dx, dy);
 
-      final path = Path();
-      for (var i = 0; i < r.corners.length; i++) {
-        // corners — в пикселях кадра, dx/dy — поля ScanPoint
-        final p = Offset(
-          r.corners[i].dx * scale + dx,
-          r.corners[i].dy * scale + dy,
-        );
-        if (i == 0) {
-          path.moveTo(p.dx, p.dy);
-        } else {
-          path.lineTo(p.dx, p.dy);
-        }
-      }
-      path.close();
-
-      // Логируем первую успешную отрисовку — с реальными координатами
       if (!_firstDrawLogged) {
         _firstDrawLogged = true;
         final rect = path.getBounds();
         DebugLog.instance.info(
-            '[Scanner] AR first draw: frame=${frame.width}x${frame.height} '
+            '[Scanner] AR first draw: '
+            'frame=${frame.width}x${frame.height} '
             'widget=${size.width.toInt()}x${size.height.toInt()} '
             'scale=${scale.toStringAsFixed(2)} '
             'rect=${rect.left.toInt()},${rect.top.toInt()} '
@@ -771,6 +832,38 @@ class _CodeMarkerPainter extends CustomPainter {
       _drawCorner(canvas, rect.bottomLeft, 1, -1, borderPaint);
       _drawCorner(canvas, rect.bottomRight, -1, -1, borderPaint);
     }
+
+    // Кандидаты (видны, но не декодированы)
+    for (final c in frame.candidates) {
+      if (c.length < 4) continue;
+      final path = Path();
+      for (var i = 0; i < c.length; i++) {
+        final p = Offset(c[i].dx * scale + dx, c[i].dy * scale + dy);
+        if (i == 0) {
+          path.moveTo(p.dx, p.dy);
+        } else {
+          path.lineTo(p.dx, p.dy);
+        }
+      }
+      path.close();
+      canvas.drawPath(path, candidatePaint);
+    }
+  }
+
+  Path _buildPath(
+      ScanResult r, double scale, double dx, double dy) {
+    final path = Path();
+    for (var i = 0; i < r.corners.length; i++) {
+      final p = Offset(
+          r.corners[i].dx * scale + dx, r.corners[i].dy * scale + dy);
+      if (i == 0) {
+        path.moveTo(p.dx, p.dy);
+      } else {
+        path.lineTo(p.dx, p.dy);
+      }
+    }
+    path.close();
+    return path;
   }
 
   void _drawCorner(
