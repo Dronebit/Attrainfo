@@ -178,6 +178,12 @@ class _ScannerSheetState extends State<_ScannerSheet>
           'previewSize=${value.previewSize?.width}x${value.previewSize?.height} '
           'error=${value.error}');
 
+      // ВАЖНО: Принудительно включаем сканирование, 
+      // если оно было остановлено из-за сворачивания приложения
+      // во время запроса разрешений.
+      await controller.setScanning(true);
+      _log.info('[Scanner] scanning forced to true');
+
       setState(() {
         _controller = controller;
         _hasTorch = hasTorch;
@@ -207,11 +213,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
     Future<String> install(String name) async {
       final file = File('${dir.path}/$name');
       final asset = 'assets/models/$name';
-      final expectedLen =
-          (await rootBundle.load(asset)).lengthInBytes;
+      final expectedLen = (await rootBundle.load(asset)).lengthInBytes;
 
-      // Копируем, если файла нет или размер не совпадает (например,
-      // после обновления моделей в assets).
+      // Копируем, если файла нет или размер не совпадает
       if (await file.exists()) {
         final actualLen = await file.length();
         if (actualLen == expectedLen) return file.path;
@@ -242,6 +246,12 @@ class _ScannerSheetState extends State<_ScannerSheet>
   void _onFrame(ScanOutcome frame) {
     if (!mounted) return;
 
+    // ВАЖНО: Игнорируем пустые кадры (0x0), которые плагин 
+    // присылает при старте камеры, пока датчик еще не отдал картинку.
+    if (frame.width == 0 || frame.height == 0) {
+      return;
+    }
+
     _frameCount++;
     final hasResults = frame.results.isNotEmpty;
     final hasCandidates = frame.candidates.isNotEmpty;
@@ -253,8 +263,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
           'results=${frame.results.length} '
           'candidates=${frame.candidates.length} '
           'hasUndecodable=${frame.hasUndecodable}');
-    } else if (hasResults ||
-        (_frameCount % 30 == 0 && hasCandidates)) {
+    } else if (hasResults || (_frameCount % 30 == 0 && hasCandidates)) {
       _log.info('[Scanner] frame #$_frameCount '
           'results=${frame.results.length} '
           'candidates=${frame.candidates.length} '
