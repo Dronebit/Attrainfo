@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, rootBundle;
@@ -63,7 +62,12 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   DateTime _lastHaptic = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// Every frame the stream delivers, valid or not. Used by the watchdog
+  /// to tell "the driver is silent" from "frames arrive but decode nothing".
   int _rawFrameCount = 0;
+
+  /// Frames that actually carry pixels. A 0x0 frame is a Huawei driver bug
+  /// that carries no picture, so it must not count as a working camera.
   int _nonEmptyFrames = 0;
 
   Timer? _watchdogTimer;
@@ -76,8 +80,11 @@ class _ScannerSheetState extends State<_ScannerSheet>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _log.info('[Scanner] initState');
-    
-    // Даем шторке время на анимацию открытия (300 мс) + инициализацию Surface
+
+    // Give the sheet's slide-in animation a moment and the Surface under
+    // the preview time to be ready; opening the camera before that gives
+    // a black frame on Android. 500 ms is short enough not to feel like
+    // a wait and long enough for both.
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) _boot();
     });
@@ -85,6 +92,26 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   Future<void> _boot() async {
     _log.info('[Scanner] boot: start');
+
+    // ---- Reset everything a retry might have left behind. ----
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
+    _rawFrameCount = 0;
+    _nonEmptyFrames = 0;
+    _isRestarting = false;
+    await _sub?.cancel();
+    _sub = null;
+    _controller?.removeListener(_onControllerChanged);
+    _controller?.dispose();
+    _controller = null;
+    _wxScanner?.dispose();
+    _wxScanner = null;
+
+    setState(() {
+      _initializing = true;
+      _initError = null;
+    });
+
     try {
       final status = await Permission.camera.request();
       if (!status.isGranted) {
@@ -99,7 +126,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
       final models = await _prepareModels();
 
-      // ВАЖНО: Пробуем p1080 вместо p720 (на Huawei часто помогает)
       _log.info('[Scanner] WxScanner.create()...');
       final wxScanner = await WxScanner.create(
         detectModelPath: models.detectPath,
@@ -107,10 +133,12 @@ class _ScannerSheetState extends State<_ScannerSheet>
       );
       _wxScanner = wxScanner;
 
+      // 1080p by default: on some Huawei devices 720p delivers no frames at
+      // all, and the extra pixels matter for dense codes anyway.
       _log.info('[Scanner] WxScanController(p1080)...');
       final controller = WxScanController(
         scanner: wxScanner,
-        resolution: WxResolution.p1080, // <-- Поменяли разрешение
+        resolution: WxResolution.p1080,
       );
 
       _log.info('[Scanner] controller.initialize()...');
@@ -123,13 +151,19 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
       if (!mounted) {
         controller.dispose();
+        wxScanner.dispose();
         return;
       }
 
       controller.addListener(_onControllerChanged);
-      _sub = controller.scans.listen(_onFrame, onError: (e, st) {
-        _log.error('[Scanner] stream error: $e');
-      });
+      _sub = controller.scans.listen(
+        _onFrame,
+        onError: (Object e, StackTrace st) {
+          _log.error('[Scanner] stream error: $e');
+          if (!mounted) return;
+          setState(() => _initError = 'Ошибка камеры: $e');
+        },
+      );
 
       setState(() {
         _controller = controller;
@@ -138,25 +172,34 @@ class _ScannerSheetState extends State<_ScannerSheet>
         _initError = null;
       });
 
-      // Стартуем сканирование после того, как виджет WxScanPreview отрисовался
+      // ---- The critical bit ----
+      // Opening the camera brings the pipeline up but does not start sending
+      // frames to the analysis stream; that takes an explicit
+      // setScanning(true). Calling it before the preview is laid out leaves
+      // a black frame on Android, so it waits for the first post-frame
+      // callback. Without this call the viewfinder works and nothing decodes,
+      // which is exactly the "no frames are passing" symptom.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _controller?.setScanning(true);
         _log.info('[Scanner] scanning started post-frame');
       });
 
-      // Watchdog: если через 7 секунд кадров нет, показываем ошибку
+      // ---- Watchdog ----
+      // Fires once, seven seconds after boot. If by then the driver has
+      // delivered nothing at all, or only 0x0 frames, something is wrong
+      // that a retry may fix and silence will not.
       _watchdogTimer = Timer(const Duration(seconds: 7), () {
         if (!mounted) return;
         if (_rawFrameCount == 0 || _nonEmptyFrames == 0) {
           _log.error('[Scanner] watchdog: no valid frames in 7s');
           setState(() {
-            _initError = 'Камера не передает кадры в анализатор (ошибка драйвера Huawei).\n'
-                'Используйте ручной ввод.';
+            _initError =
+                'Камера не передает кадры в анализатор.\n'
+                'Попробуйте ещё раз или введите код вручную.';
           });
         }
       });
-
     } catch (e, st) {
       _log.error('[Scanner] boot failed: $e');
       if (!mounted) return;
@@ -179,12 +222,14 @@ class _ScannerSheetState extends State<_ScannerSheet>
       final asset = 'assets/models/$name';
       final file = File('${dir.path}/$name');
       final data = await rootBundle.load(asset);
-      final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      final bytes =
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
       if (!await file.exists() || await file.length() != bytes.length) {
         await file.writeAsBytes(bytes, flush: true);
       }
       return (bytes, file.path);
     }
+
     final (db, dp) = await install('detect.tflite');
     final (sb, sp) = await install('sr.tflite');
     return (detectBytes: db, srBytes: sb, detectPath: dp, srPath: sp);
@@ -205,7 +250,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
           'candidates=${frame.candidates.length}');
     }
 
-    // Если пришел пустой кадр (баг драйвера Huawei), пробуем перезапустить стрим
+    // A 0x0 frame is a driver bug on some Huawei devices. Restart the stream
+    // once; the counters are reset below in _restartCameraStream so the
+    // watchdog gets a fresh window if the restart does not help.
     if (frame.width == 0 || frame.height == 0) {
       if (_rawFrameCount == 3 && !_isRestarting) {
         _isRestarting = true;
@@ -217,7 +264,18 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
     _nonEmptyFrames++;
     if (_nonEmptyFrames == 1) {
-      _log.info('[Scanner] FIRST NON-EMPTY FRAME: ${frame.width}x${frame.height}');
+      _log.info(
+          '[Scanner] FIRST NON-EMPTY FRAME: ${frame.width}x${frame.height}');
+    }
+
+    // A frame with pixels has arrived. If the watchdog had already shown an
+    // error — because it fired a moment before the driver caught up, or
+    // because a transient stream error was set — clear it. The camera is
+    // working; a stale message would be a lie.
+    if (_initError != null) {
+      _watchdogTimer?.cancel();
+      _watchdogTimer = null;
+      setState(() => _initError = null);
     }
 
     if (_isProcessing) return;
@@ -256,7 +314,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
           .firstOrNull;
     } else if (kind == ScanKind.item) {
       item = widget.db.inventoryItems
-          .where((i) => i.kind == InventoryItemKind.item && i.sku.toLowerCase() == searchCode.toLowerCase())
+          .where((i) =>
+              i.kind == InventoryItemKind.item &&
+              i.sku.toLowerCase() == searchCode.toLowerCase())
           .firstOrNull;
     } else {
       loc = widget.db.storageLocations
@@ -264,7 +324,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
           .firstOrNull;
       if (loc == null) {
         item = widget.db.inventoryItems
-            .where((i) => i.kind == InventoryItemKind.item && i.sku.toLowerCase() == searchCode.toLowerCase())
+            .where((i) =>
+                i.kind == InventoryItemKind.item &&
+                i.sku.toLowerCase() == searchCode.toLowerCase())
             .firstOrNull;
       }
     }
@@ -285,6 +347,11 @@ class _ScannerSheetState extends State<_ScannerSheet>
       await c.setScanning(false);
       await Future.delayed(const Duration(milliseconds: 500));
       await c.setScanning(true);
+      // Reset counters so the watchdog fires again if the restart did not
+      // change anything. Without this, a restart after a watchdog error
+      // leaves the watchdog with no way to say "still broken".
+      _rawFrameCount = 0;
+      _nonEmptyFrames = 0;
       _log.info('[Scanner] camera stream restarted');
     } catch (e) {
       _log.error('[Scanner] restart failed: $e');
@@ -334,9 +401,15 @@ class _ScannerSheetState extends State<_ScannerSheet>
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.amb, foregroundColor: const Color(0xFF1C1204)),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.amb,
+              foregroundColor: const Color(0xFF1C1204),
+            ),
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('OK'),
           ),
@@ -344,11 +417,16 @@ class _ScannerSheetState extends State<_ScannerSheet>
       ),
     );
     if (ok == null || ok.isEmpty || !mounted) return;
-    Navigator.pop(context, AppScanResult(
-      ok,
-      ok.startsWith('LOC:') ? ScanKind.location : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown),
-      ok.replaceAll(RegExp(r'^(LOC:|SKU:)'), ''),
-    ));
+    Navigator.pop(
+      context,
+      AppScanResult(
+        ok,
+        ok.startsWith('LOC:')
+            ? ScanKind.location
+            : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown),
+        ok.replaceAll(RegExp(r'^(LOC:|SKU:)'), ''),
+      ),
+    );
   }
 
   @override
@@ -368,7 +446,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
     _sub?.cancel();
     _controller?.removeListener(_onControllerChanged);
     _controller?.dispose();
+    _controller = null;
     _wxScanner?.dispose();
+    _wxScanner = null;
     super.dispose();
   }
 
@@ -389,17 +469,28 @@ class _ScannerSheetState extends State<_ScannerSheet>
             margin: const EdgeInsets.only(top: 8),
             width: 40,
             height: 4,
-            decoration: BoxDecoration(color: AppColors.line2, borderRadius: BorderRadius.circular(2)),
+            decoration: BoxDecoration(
+              color: AppColors.line2,
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(children: [
-              const Icon(Icons.qr_code_scanner, size: 20, color: AppColors.amb),
+              const Icon(Icons.qr_code_scanner,
+                  size: 20, color: AppColors.amb),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text('Сканирование', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                child: Text(
+                  'Сканирование',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
+                ),
               ),
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              ),
             ]),
           ),
           Expanded(
@@ -425,17 +516,45 @@ class _ScannerSheetState extends State<_ScannerSheet>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.videocam_off, size: 48, color: AppColors.red),
+            const Icon(Icons.videocam_off,
+                size: 48, color: AppColors.red),
             const SizedBox(height: 12),
-            const Text('Камера недоступна', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const Text(
+              'Камера недоступна',
+              style:
+                  TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
-            Text(_initError!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: AppColors.mut)),
+            Text(
+              _initError!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: AppColors.mut),
+            ),
             const SizedBox(height: 16),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.amb, foregroundColor: const Color(0xFF1C1204)),
-              onPressed: _manualInput,
-              icon: const Icon(Icons.keyboard, size: 16),
-              label: const Text('Ввести код вручную'),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.amb,
+                    foregroundColor: const Color(0xFF1C1204),
+                  ),
+                  onPressed: () {
+                    // _boot() itself resets state, so no need to touch
+                    // _initializing here. Calling it directly re-opens
+                    // the camera and restarts the watchdog.
+                    _boot();
+                  },
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Ещё раз'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _manualInput,
+                  icon: const Icon(Icons.keyboard, size: 16),
+                  label: const Text('Вручную'),
+                ),
+              ],
             ),
           ],
         ),
@@ -454,7 +573,10 @@ class _ScannerSheetState extends State<_ScannerSheet>
       builder: (context, value, _) {
         final previewSize = value.previewSize;
         if (previewSize == null) {
-          return const ColoredBox(color: Color(0xFF0E1420), child: Center(child: CircularProgressIndicator()));
+          return const ColoredBox(
+            color: Color(0xFF0E1420),
+            child: Center(child: CircularProgressIndicator()),
+          );
         }
 
         return Stack(
@@ -477,22 +599,35 @@ class _ScannerSheetState extends State<_ScannerSheet>
                 ),
               ),
             ),
-            if (_lastFrame != null && (_lastFrame!.results.isNotEmpty || _lastFrame!.candidates.isNotEmpty))
+            if (_lastFrame != null &&
+                (_lastFrame!.results.isNotEmpty ||
+                    _lastFrame!.candidates.isNotEmpty))
               IgnorePointer(
                 child: CustomPaint(
                   size: Size.infinite,
                   painter: _CodeMarkerPainter(frame: _lastFrame!),
                 ),
               ),
-            if (!_isProcessing && (_lastFrame == null || _lastFrame!.results.isEmpty))
+            if (!_isProcessing &&
+                (_lastFrame == null || _lastFrame!.results.isEmpty))
               Center(
                 child: Container(
-                  width: 250, height: 250,
-                  decoration: BoxDecoration(border: Border.all(color: AppColors.amb, width: 3), borderRadius: BorderRadius.circular(16)),
+                  width: 250,
+                  height: 250,
+                  decoration: BoxDecoration(
+                    border:
+                        Border.all(color: AppColors.amb, width: 3),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
               ),
             if (_isProcessing)
-              Positioned(left: 16, right: 16, bottom: 16, child: _buildFloatingCard()),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 16,
+                child: _buildFloatingCard(),
+              ),
           ],
         );
       },
@@ -504,12 +639,25 @@ class _ScannerSheetState extends State<_ScannerSheet>
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(children: [
         Text(
-          _isProcessing ? 'Подтвердите выбор' : (_initError != null ? 'Введите код вручную' : 'Наведите на QR полки или позиции'),
-          style: TextStyle(fontSize: 12, color: _isProcessing ? AppColors.amb : AppColors.mut, fontWeight: _isProcessing ? FontWeight.bold : FontWeight.normal),
+          _isProcessing
+              ? 'Подтвердите выбор'
+              : (_initError != null
+                  ? 'Введите код вручную или попробуйте ещё раз'
+                  : 'Наведите на QR полки или позиции'),
+          style: TextStyle(
+            fontSize: 12,
+            color: _isProcessing ? AppColors.amb : AppColors.mut,
+            fontWeight: _isProcessing
+                ? FontWeight.bold
+                : FontWeight.normal,
+          ),
         ),
         const SizedBox(height: 10),
         Row(children: [
-          if (_initError == null && !_initializing && _hasTorch) ...[
+          if (_initError == null &&
+              !_initializing &&
+              _hasTorch &&
+              _controller != null) ...[
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(right: 8),
@@ -517,9 +665,16 @@ class _ScannerSheetState extends State<_ScannerSheet>
                   valueListenable: _controller!,
                   builder: (context, value, _) {
                     return OutlinedButton.icon(
-                      onPressed: () => _controller!.setTorch(!value.torchEnabled),
-                      icon: Icon(value.torchEnabled ? Icons.flashlight_on : Icons.flashlight_off, size: 16),
-                      label: Text(value.torchEnabled ? 'Свет вкл' : 'Свет'),
+                      onPressed: () =>
+                          _controller!.setTorch(!value.torchEnabled),
+                      icon: Icon(
+                        value.torchEnabled
+                            ? Icons.flashlight_on
+                            : Icons.flashlight_off,
+                        size: 16,
+                      ),
+                      label: Text(
+                          value.torchEnabled ? 'Свет вкл' : 'Свет'),
                     );
                   },
                 ),
@@ -529,8 +684,15 @@ class _ScannerSheetState extends State<_ScannerSheet>
           Expanded(
             child: OutlinedButton.icon(
               onPressed: _isProcessing ? _resetScanner : _manualInput,
-              icon: Icon(_isProcessing ? Icons.refresh : Icons.keyboard, size: 16),
-              label: Text(_isProcessing ? 'Сканировать другое' : 'Ввести вручную'),
+              icon: Icon(
+                _isProcessing ? Icons.refresh : Icons.keyboard,
+                size: 16,
+              ),
+              label: Text(
+                _isProcessing
+                    ? 'Сканировать другое'
+                    : 'Ввести вручную',
+              ),
             ),
           ),
         ]),
@@ -540,34 +702,64 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   Widget _buildFloatingCard() {
     final isFound = _foundItem != null || _foundLoc != null;
-    final title = _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
+    final title =
+        _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
     final subtitle = _foundItem != null
         ? '${_foundItem!.sku} · Остаток: ${widget.db.stockTotal(_foundItem!.id)} ${_foundItem!.unit.label}'
-        : (_foundLoc != null ? 'Локация: ${_foundLoc!.code}' : (_rawCodeString ?? 'Неизвестный код'));
+        : (_foundLoc != null
+            ? 'Локация: ${_foundLoc!.code}'
+            : (_rawCodeString ?? 'Неизвестный код'));
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.panel,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isFound ? AppColors.grn.withValues(alpha: 0.5) : AppColors.red.withValues(alpha: 0.5)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))],
+        border: Border.all(
+          color: isFound
+              ? AppColors.grn.withValues(alpha: 0.5)
+              : AppColors.red.withValues(alpha: 0.5),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(children: [
             Icon(
-              isFound ? (_foundLoc != null ? Icons.inventory_2_outlined : Icons.check_circle_outline) : Icons.error_outline,
-              color: isFound ? AppColors.grn : AppColors.red, size: 24,
+              isFound
+                  ? (_foundLoc != null
+                      ? Icons.inventory_2_outlined
+                      : Icons.check_circle_outline)
+                  : Icons.error_outline,
+              color: isFound ? AppColors.grn : AppColors.red,
+              size: 24,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.dim), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.dim),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
@@ -577,9 +769,16 @@ class _ScannerSheetState extends State<_ScannerSheet>
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.amb, foregroundColor: const Color(0xFF1C1204), padding: const EdgeInsets.symmetric(vertical: 10)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.amb,
+                  foregroundColor: const Color(0xFF1C1204),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
                 onPressed: _confirmSelection,
-                child: const Text('Выбрать', style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text(
+                  'Выбрать',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ),
           ],
@@ -598,14 +797,27 @@ class _CodeMarkerPainter extends CustomPainter {
     if (frame.width == 0 || frame.height == 0) return;
     if (frame.results.isEmpty && frame.candidates.isEmpty) return;
 
-    final scale = math.max(size.width / frame.width, size.height / frame.height);
+    final scale =
+        math.max(size.width / frame.width, size.height / frame.height);
     final dx = (size.width - frame.width * scale) / 2;
     final dy = (size.height - frame.height * scale) / 2;
 
-    final fillPaint = Paint()..color = AppColors.grn.withValues(alpha: 0.2)..style = PaintingStyle.fill;
-    final glowPaint = Paint()..color = AppColors.grn.withValues(alpha: 0.4)..style = PaintingStyle.stroke..strokeWidth = 8.0..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-    final borderPaint = Paint()..color = AppColors.grn..style = PaintingStyle.stroke..strokeWidth = 3;
-    final candidatePaint = Paint()..color = AppColors.amb.withValues(alpha: 0.7)..style = PaintingStyle.stroke..strokeWidth = 2;
+    final fillPaint = Paint()
+      ..color = AppColors.grn.withValues(alpha: 0.2)
+      ..style = PaintingStyle.fill;
+    final glowPaint = Paint()
+      ..color = AppColors.grn.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    final borderPaint = Paint()
+      ..color = AppColors.grn
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    final candidatePaint = Paint()
+      ..color = AppColors.amb.withValues(alpha: 0.7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
 
     for (final r in frame.results) {
       if (r.corners.length < 4) continue;
@@ -624,30 +836,45 @@ class _CodeMarkerPainter extends CustomPainter {
       if (c.length < 4) continue;
       final path = Path();
       for (var i = 0; i < c.length; i++) {
-        final p = Offset(c[i].dx * scale + dx, c[i].dy * scale + dy);
-        if (i == 0) path.moveTo(p.dx, p.dy); else path.lineTo(p.dx, p.dy);
+        final p =
+            Offset(c[i].dx * scale + dx, c[i].dy * scale + dy);
+        if (i == 0) {
+          path.moveTo(p.dx, p.dy);
+        } else {
+          path.lineTo(p.dx, p.dy);
+        }
       }
       path.close();
       canvas.drawPath(path, candidatePaint);
     }
   }
 
-  Path _buildPath(ScanResult r, double scale, double dx, double dy) {
+  Path _buildPath(
+      ScanResult r, double scale, double dx, double dy) {
     final path = Path();
     for (var i = 0; i < r.corners.length; i++) {
-      final p = Offset(r.corners[i].dx * scale + dx, r.corners[i].dy * scale + dy);
-      if (i == 0) path.moveTo(p.dx, p.dy); else path.lineTo(p.dx, p.dy);
+      final p = Offset(
+        r.corners[i].dx * scale + dx,
+        r.corners[i].dy * scale + dy,
+      );
+      if (i == 0) {
+        path.moveTo(p.dx, p.dy);
+      } else {
+        path.lineTo(p.dx, p.dy);
+      }
     }
     path.close();
     return path;
   }
 
-  void _drawCorner(Canvas canvas, Offset p, double dx, double dy, Paint paint) {
+  void _drawCorner(
+      Canvas canvas, Offset p, double dx, double dy, Paint paint) {
     const len = 15.0;
     canvas.drawLine(p, p + Offset(len * dx, 0), paint);
     canvas.drawLine(p, p + Offset(0, len * dy), paint);
   }
 
   @override
-  bool shouldRepaint(covariant _CodeMarkerPainter oldDelegate) => oldDelegate.frame != frame;
+  bool shouldRepaint(covariant _CodeMarkerPainter oldDelegate) =>
+      oldDelegate.frame != frame;
 }
