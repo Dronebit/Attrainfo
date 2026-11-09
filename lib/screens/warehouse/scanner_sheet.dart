@@ -33,12 +33,15 @@ class _ScannerSheetState extends State<_ScannerSheet> {
   bool _handled = false;
   Code? _lastCode; // Для отрисовки AR-рамки
 
-  // Конвертируем Position из ZXing в Rect для CustomPaint
+  // Конвертируем Position (4 угла) в Rect
   Rect? _positionToRect(Position? pos) {
-  if (pos == null) return null;
-  // Используем встроенный метод toRect() из flutter_zxing
-  return pos.toRect();
-}
+    if (pos == null) return null;
+    final left = [pos.topLeftX, pos.bottomLeftX].reduce((a, b) => a < b ? a : b).toDouble();
+    final right = [pos.topRightX, pos.bottomRightX].reduce((a, b) => a > b ? a : b).toDouble();
+    final top = [pos.topLeftY, pos.topRightY].reduce((a, b) => a < b ? a : b).toDouble();
+    final bottom = [pos.bottomLeftY, pos.bottomRightY].reduce((a, b) => a > b ? a : b).toDouble();
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
 
   void _onScan(Code code) {
     if (_handled) return;
@@ -177,7 +180,6 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                     if (_lastCode != null && _lastCode!.position != null)
                       Positioned.fill(
                         child: CustomPaint(
-                          // Передаем сконвертированный Rect
                           painter: _ArOverlayPainter(
                             _positionToRect(_lastCode!.position),
                           ),
