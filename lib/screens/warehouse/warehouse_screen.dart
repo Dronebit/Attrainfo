@@ -3,13 +3,13 @@ import 'package:provider/provider.dart';
 import '../../data/app_database.dart';
 import '../../models/employee.dart';
 import '../../models/inventory.dart';
-import '../../models/models.dart'; 
+import '../../models/models.dart';
 import '../../theme.dart';
-import 'scanner_sheet.dart';
 import 'dialogs/qr_dialog.dart';
+import 'scanner_sheet.dart';
 
 // ═══════════════════════════════════════════════════════════════════
-// КОРНЕВОЙ ЭКРАН — 4 вкладки (Главная / Позиции / Локации / Операции)
+// КОРНЕВОЙ ЭКРАН — 4 вкладки
 // ═══════════════════════════════════════════════════════════════════
 
 class WarehouseScreen extends StatefulWidget {
@@ -78,7 +78,7 @@ class _WarehouseScreenState extends State<WarehouseScreen>
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ВКЛАДКА 0 — ГЛАВНАЯ (для механика)
+// ВКЛАДКА 0 — ГЛАВНАЯ
 // ═══════════════════════════════════════════════════════════════════
 
 class _HomeTab extends StatefulWidget {
@@ -106,6 +106,7 @@ class _HomeTabState extends State<_HomeTab> {
         .map((l) => l.id)
         .toSet();
     return db.inventoryItems.where((it) {
+      if (it.kind != InventoryItemKind.item) return false;
       double total = 0;
       for (final t in db.stockTransactions) {
         if (t.itemId != it.id) continue;
@@ -350,7 +351,9 @@ class _HomeTabState extends State<_HomeTab> {
       loc = m.isEmpty ? null : m.first;
     } else if (result.kind == ScanKind.item) {
       final m = db.inventoryItems
-          .where((i) => i.sku.toLowerCase() == result.code.toLowerCase())
+          .where((i) =>
+              i.kind == InventoryItemKind.item &&
+              i.sku.toLowerCase() == result.code.toLowerCase())
           .toList();
       item = m.isEmpty ? null : m.first;
     } else {
@@ -361,7 +364,9 @@ class _HomeTabState extends State<_HomeTab> {
         loc = lm.first;
       } else {
         final im = db.inventoryItems
-            .where((i) => i.sku.toLowerCase() == result.code.toLowerCase())
+            .where((i) =>
+                i.kind == InventoryItemKind.item &&
+                i.sku.toLowerCase() == result.code.toLowerCase())
             .toList();
         item = im.isEmpty ? null : im.first;
       }
@@ -435,6 +440,20 @@ class _HomeTabState extends State<_HomeTab> {
                 _sectionTitle('ДЕЙСТВИЯ'),
                 const SizedBox(height: 6),
                 Wrap(spacing: 6, runSpacing: 6, children: [
+                  _actionBtn(
+                    icon: Icons.qr_code,
+                    label: 'QR полки',
+                    color: AppColors.amb,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      showQrDialog(
+                        context,
+                        title: loc.code,
+                        subtitle: loc.name.isEmpty ? 'Полка' : loc.name,
+                        qrData: 'LOC:${loc.code}',
+                      );
+                    },
+                  ),
                   _actionBtn(
                     icon: Icons.add,
                     label: 'Приход',
@@ -585,6 +604,20 @@ class _HomeTabState extends State<_HomeTab> {
                 _sectionTitle('ДЕЙСТВИЯ'),
                 const SizedBox(height: 6),
                 Wrap(spacing: 6, runSpacing: 6, children: [
+                  _actionBtn(
+                    icon: Icons.qr_code,
+                    label: 'QR',
+                    color: AppColors.mut,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      showQrDialog(
+                        context,
+                        title: it.name,
+                        subtitle: 'SKU: ${it.sku}',
+                        qrData: 'SKU:${it.sku}',
+                      );
+                    },
+                  ),
                   _actionBtn(
                     icon: Icons.add,
                     label: 'Приход',
@@ -769,7 +802,11 @@ class _HomeTabState extends State<_HomeTab> {
     StockTransactionType type, {
     StorageLocation? prefilledLocation,
   }) async {
-    if (db.inventoryItems.isEmpty) {
+    final leaves = db.inventoryItems
+        .where((x) => x.kind == InventoryItemKind.item)
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    if (leaves.isEmpty) {
       _snack('Сначала создайте хотя бы одну позицию');
       return;
     }
@@ -784,9 +821,9 @@ class _HomeTabState extends State<_HomeTab> {
           height: 400,
           child: ListView.builder(
             shrinkWrap: true,
-            itemCount: db.inventoryItems.length,
+            itemCount: leaves.length,
             itemBuilder: (_, i) {
-              final it = db.inventoryItems[i];
+              final it = leaves[i];
               return ListTile(
                 title: Text(it.name,
                     style: const TextStyle(fontSize: 13)),
@@ -907,7 +944,7 @@ class _HomeTabState extends State<_HomeTab> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ВКЛАДКА 1 — ПОЗИЦИИ
+// ВКЛАДКА 1 — НОМЕНКЛАТУРА (дерево)
 // ═══════════════════════════════════════════════════════════════════
 
 class _ItemsTab extends StatefulWidget {
@@ -922,6 +959,7 @@ class _ItemsTabState extends State<_ItemsTab> {
   InventoryCategory? _filterCategory;
   bool _onlyBelowMin = false;
   final _searchCtrl = TextEditingController();
+  final Set<String> _collapsedGroups = {};
 
   String _uid() => 'x${DateTime.now().microsecondsSinceEpoch}';
 
@@ -931,13 +969,19 @@ class _ItemsTabState extends State<_ItemsTab> {
     super.dispose();
   }
 
-  List<InventoryItem> _filtered(AppDatabase db) {
+  bool get _hasActiveFilters =>
+      _filterCategory != null || _onlyBelowMin || _query.isNotEmpty;
+
+  List<InventoryItem> _flatFiltered(AppDatabase db) {
     final q = _query.toLowerCase().trim();
     return db.inventoryItems.where((it) {
       if (_filterCategory != null && it.category != _filterCategory) {
         return false;
       }
-      if (_onlyBelowMin && !db.isBelowMin(it.id)) return false;
+      if (_onlyBelowMin) {
+        if (it.kind != InventoryItemKind.item) return false;
+        if (!db.isBelowMin(it.id)) return false;
+      }
       if (q.isNotEmpty) {
         final hay = '${it.name} ${it.sku}'.toLowerCase();
         if (!hay.contains(q)) return false;
@@ -950,7 +994,7 @@ class _ItemsTabState extends State<_ItemsTab> {
   @override
   Widget build(BuildContext context) {
     final db = context.watch<AppDatabase>();
-    final filtered = _filtered(db);
+    final flat = _flatFiltered(db);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -959,9 +1003,12 @@ class _ItemsTabState extends State<_ItemsTab> {
         const SizedBox(height: 14),
         Row(children: [
           Expanded(
-            child: Text('Найдено: ${filtered.length}',
-                style:
-                    const TextStyle(fontSize: 11, color: AppColors.dim)),
+            child: Text(
+              _hasActiveFilters
+                  ? 'Найдено: ${flat.length}'
+                  : 'Всего узлов: ${db.inventoryItems.length}',
+              style: const TextStyle(fontSize: 11, color: AppColors.dim),
+            ),
           ),
           if (_hasActiveFilters)
             TextButton(
@@ -982,7 +1029,7 @@ class _ItemsTabState extends State<_ItemsTab> {
           const SizedBox(width: 8),
           _primaryBtn(
             icon: Icons.add,
-            label: 'Позиция',
+            label: 'Номенклатура',
             onTap: () => _openItemDialog(db, null),
           ),
         ]),
@@ -993,27 +1040,233 @@ class _ItemsTabState extends State<_ItemsTab> {
           _emptyState(
             icon: Icons.inventory_2_outlined,
             title: 'Склад пуст',
-            subtitle: 'Создайте первую позицию',
+            subtitle: 'Создайте первую номенклатуру',
             action: _primaryBtn(
               icon: Icons.add,
               label: 'Создать',
               onTap: () => _openItemDialog(db, null),
             ),
           )
-        else if (filtered.isEmpty)
+        else if (_hasActiveFilters && flat.isEmpty)
           _emptyState(
             icon: Icons.search_off,
             title: 'Ничего не найдено',
             subtitle: 'Измените фильтры или запрос',
           )
+        else if (_hasActiveFilters)
+          ...flat.map((it) => _itemRow(db, it, 0))
         else
-          for (final it in filtered) _itemRow(db, it),
+          ..._renderTree(db, null, 0),
       ]),
     );
   }
 
+  List<Widget> _renderTree(AppDatabase db, String? parentId, int depth) {
+    final items = db.itemsByParent(parentId);
+    final result = <Widget>[];
+    for (final it in items) {
+      if (it.kind == InventoryItemKind.group) {
+        final collapsed = _collapsedGroups.contains(it.id);
+        final hasChildren = db.hasItemChildren(it.id);
+        result.add(_groupRow(db, it, depth, collapsed, hasChildren));
+        if (!collapsed && hasChildren) {
+          result.addAll(_renderTree(db, it.id, depth + 1));
+        }
+      } else {
+        result.add(_itemRow(db, it, depth));
+      }
+    }
+    return result;
+  }
+
+  Widget _groupRow(AppDatabase db, InventoryItem it, int depth,
+      bool collapsed, bool hasChildren) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 4, left: depth * 12.0),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: InkWell(
+        onTap: hasChildren
+            ? () => setState(() {
+                  if (collapsed) {
+                    _collapsedGroups.remove(it.id);
+                  } else {
+                    _collapsedGroups.add(it.id);
+                  }
+                })
+            : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Row(children: [
+            SizedBox(
+              width: 16,
+              child: hasChildren
+                  ? Icon(
+                      collapsed
+                          ? Icons.chevron_right
+                          : Icons.expand_more,
+                      size: 16,
+                      color: AppColors.mut,
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppColors.amb.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.folder_outlined,
+                  size: 18, color: AppColors.amb),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(it.name,
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700),
+                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    '${db.leafDescendants(it.id).length} позиций',
+                    style: const TextStyle(
+                        fontSize: 10.5, color: AppColors.dim),
+                  ),
+                ],
+              ),
+            ),
+            _iconBtn(
+              icon: Icons.edit_outlined,
+              onTap: () => _openItemDialog(db, it),
+            ),
+            _iconBtn(
+              icon: Icons.delete_outline,
+              danger: true,
+              onTap: () => _deleteItem(db, it),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _itemRow(AppDatabase db, InventoryItem it, int depth) {
+    final total = db.stockTotal(it.id);
+    final belowMin = total < it.minQuantity;
+    final locations = db.stockByLocation(it.id);
+    final locNames = locations.entries
+        .map((e) {
+          final loc = db.locationById(e.key);
+          return '${loc?.code ?? "—"} (${_num(e.value)})';
+        })
+        .take(2)
+        .join(' · ');
+    final more = locations.length > 2 ? ' +${locations.length - 2}' : '';
+
+    return InkWell(
+      onTap: () => _showItemCard(db, it),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        margin: EdgeInsets.only(bottom: 4, left: depth * 12.0),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: AppColors.panel,
+          border: Border.all(
+              color: belowMin
+                  ? AppColors.red.withValues(alpha: 0.3)
+                  : AppColors.line),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: _categoryColor(it.category).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(_categoryIcon(it.category),
+                size: 18, color: _categoryColor(it.category)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Flexible(
+                    child: Text(it.name,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  if (belowMin) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppColors.red.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: const Text('⚠',
+                          style: TextStyle(
+                              fontSize: 9,
+                              color: AppColors.red,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ]),
+                Text('${it.sku} · ${it.category.label}',
+                    style: const TextStyle(
+                        fontSize: 10.5, color: AppColors.dim)),
+                if (locNames.isNotEmpty)
+                  Text('$locNames$more',
+                      style: const TextStyle(
+                          fontSize: 10.5, color: AppColors.mut),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+          Text('${_num(total)} ${it.unit.label}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+                color: belowMin ? AppColors.red : AppColors.txt,
+              )),
+          const SizedBox(width: 6),
+          const Icon(Icons.chevron_right, size: 16, color: AppColors.dim),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _deleteItem(AppDatabase db, InventoryItem it) async {
+    final err = db.deleteInventoryItemSafe(it.id);
+    if (err != null) {
+      _snack(err);
+      return;
+    }
+    _snack('Удалено');
+  }
+
   Widget _kpiRow(AppDatabase db) {
-    final total = db.inventoryItems.length;
+    final total = db.inventoryItems
+        .where((x) => x.kind == InventoryItemKind.item)
+        .length;
+    final groups = db.inventoryItems
+        .where((x) => x.kind == InventoryItemKind.group)
+        .length;
     final below = db.belowMinCount;
     final value = db.totalStockValue;
 
@@ -1026,7 +1279,7 @@ class _ItemsTabState extends State<_ItemsTab> {
           child: _Kpi(
             label: 'Позиций',
             value: '$total',
-            sub: 'в справочнике',
+            sub: '$groups групп',
             icon: Icons.inventory_2_outlined,
             color: AppColors.blu,
           ),
@@ -1113,115 +1366,6 @@ class _ItemsTabState extends State<_ItemsTab> {
     );
   }
 
-  bool get _hasActiveFilters =>
-      _filterCategory != null || _onlyBelowMin || _query.isNotEmpty;
-
-  Widget _itemRow(AppDatabase db, InventoryItem it) {
-    final total = db.stockTotal(it.id);
-    final belowMin = total < it.minQuantity;
-    final locations = db.stockByLocation(it.id);
-    final locNames = locations.entries
-        .map((e) {
-          final loc = db.locationById(e.key);
-          return '${loc?.code ?? "—"} (${_num(e.value)})';
-        })
-        .take(3)
-        .join(' · ');
-    final more = locations.length > 3 ? ' +${locations.length - 3}' : '';
-
-    return InkWell(
-      onTap: () => _showItemCard(db, it),
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.panel,
-          border: Border.all(
-              color: belowMin
-                  ? AppColors.red.withValues(alpha: 0.3)
-                  : AppColors.line),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: _categoryColor(it.category).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Icon(_categoryIcon(it.category),
-                size: 20, color: _categoryColor(it.category)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Flexible(
-                    child: Text(it.name,
-                        style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                  if (belowMin) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: AppColors.red.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: const Text('⚠ ниже',
-                          style: TextStyle(
-                              fontSize: 9,
-                              color: AppColors.red,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                  ],
-                ]),
-                const SizedBox(height: 3),
-                Text('${it.sku} · ${it.category.label}',
-                    style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.dim)),
-                if (locNames.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text('$locNames$more',
-                      style: const TextStyle(
-                          fontSize: 10.5, color: AppColors.mut),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('${_num(total)} ${it.unit.label}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'monospace',
-                    color: belowMin ? AppColors.red : AppColors.txt,
-                  )),
-              Text('мин ${_num(it.minQuantity.toDouble())}',
-                  style:
-                      const TextStyle(fontSize: 10, color: AppColors.dim)),
-            ],
-          ),
-          const SizedBox(width: 4),
-          const Icon(Icons.chevron_right, size: 16, color: AppColors.dim),
-        ]),
-      ),
-    );
-  }
-
   Future<void> _showItemCard(AppDatabase db, InventoryItem it) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -1260,13 +1404,21 @@ class _ItemsTabState extends State<_ItemsTab> {
                         width: 52,
                         height: 52,
                         decoration: BoxDecoration(
-                          color: _categoryColor(it.category)
-                              .withValues(alpha: 0.12),
+                          color: it.kind == InventoryItemKind.group
+                              ? AppColors.amb.withValues(alpha: 0.12)
+                              : _categoryColor(it.category)
+                                  .withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(_categoryIcon(it.category),
-                            size: 26,
-                            color: _categoryColor(it.category)),
+                        child: Icon(
+                          it.kind == InventoryItemKind.group
+                              ? Icons.folder_outlined
+                              : _categoryIcon(it.category),
+                          size: 26,
+                          color: it.kind == InventoryItemKind.group
+                              ? AppColors.amb
+                              : _categoryColor(it.category),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -1278,7 +1430,10 @@ class _ItemsTabState extends State<_ItemsTab> {
                                     fontSize: 17,
                                     fontWeight: FontWeight.w700)),
                             const SizedBox(height: 2),
-                            Text('${it.sku} · ${it.category.label}',
+                            Text(
+                                it.kind == InventoryItemKind.group
+                                    ? '${db.leafDescendants(it.id).length} позиций в группе'
+                                    : '${it.sku} · ${it.category.label}',
                                 style: const TextStyle(
                                     fontSize: 11.5,
                                     color: AppColors.dim)),
@@ -1295,103 +1450,138 @@ class _ItemsTabState extends State<_ItemsTab> {
                       ),
                     ]),
                     const SizedBox(height: 16),
-                    _sectionTitle('ОСТАТКИ'),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0E1420),
-                        borderRadius: BorderRadius.circular(10),
+                    if (it.kind == InventoryItemKind.item) ...[
+                      _sectionTitle('ОСТАТКИ'),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0E1420),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(children: [
+                          _kv('Всего',
+                              '${_num(db.stockTotal(it.id))} ${it.unit.label}',
+                              bold: true),
+                          _kv('Минимум', _num(it.minQuantity.toDouble())),
+                          if (it.price != null)
+                            _kv('Цена',
+                                '${it.price!.toStringAsFixed(0)} ₽ / ${it.unit.label}'),
+                        ]),
                       ),
-                      child: Column(children: [
-                        _kv('Всего',
-                            '${_num(db.stockTotal(it.id))} ${it.unit.label}',
-                            bold: true),
-                        _kv('Минимум', _num(it.minQuantity.toDouble())),
-                        if (it.price != null)
-                          _kv('Цена',
-                              '${it.price!.toStringAsFixed(0)} ₽ / ${it.unit.label}'),
-                      ]),
-                    ),
-                    const SizedBox(height: 12),
-                    _sectionTitle('ПО ЛОКАЦИЯМ'),
-                    const SizedBox(height: 6),
-                    if (db.stockByLocation(it.id).isEmpty)
-                      const Text('Нет остатков',
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.dim))
-                    else
-                      for (final e in db.stockByLocation(it.id).entries)
-                        _locationRow(db, e.key, e.value, it),
-                    const SizedBox(height: 16),
-                    _sectionTitle('ПОСЛЕДНИЕ ОПЕРАЦИИ'),
-                    const SizedBox(height: 6),
-                    if (db.transactionsForItem(it.id).isEmpty)
-                      const Text('Операций нет',
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.dim))
-                    else
-                      for (final t in db.transactionsForItem(it.id).take(10))
-                        _txRow(t),
+                      const SizedBox(height: 12),
+                      _sectionTitle('ПО ЛОКАЦИЯМ'),
+                      const SizedBox(height: 6),
+                      if (db.stockByLocation(it.id).isEmpty)
+                        const Text('Нет остатков',
+                            style: TextStyle(
+                                fontSize: 12, color: AppColors.dim))
+                      else
+                        for (final e in db.stockByLocation(it.id).entries)
+                          _locationRow(db, e.key, e.value, it),
+                      const SizedBox(height: 16),
+                      _sectionTitle('ПОСЛЕДНИЕ ОПЕРАЦИИ'),
+                      const SizedBox(height: 6),
+                      if (db.transactionsForItem(it.id).isEmpty)
+                        const Text('Операций нет',
+                            style: TextStyle(
+                                fontSize: 12, color: AppColors.dim))
+                      else
+                        for (final t
+                            in db.transactionsForItem(it.id).take(10))
+                          _txRow(t),
+                    ] else ...[
+                      _sectionTitle('СОСТАВ ГРУППЫ'),
+                      const SizedBox(height: 6),
+                      if (db.leafDescendants(it.id).isEmpty)
+                        const Text('Пусто',
+                            style: TextStyle(
+                                fontSize: 12, color: AppColors.dim))
+                      else
+                        for (final child in db.leafDescendants(it.id))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              '· ${child.name}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                    ],
                     const SizedBox(height: 16),
                     _sectionTitle('ДЕЙСТВИЯ'),
                     const SizedBox(height: 6),
                     Wrap(spacing: 6, runSpacing: 6, children: [
-                      _actionBtn(
-                        icon: Icons.add,
-                        label: 'Приход',
-                        color: AppColors.grn,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _openTransactionDialog(context, db, it,
-                              StockTransactionType.income,
-                              authorId: widget.currentUser?.id);
-                        },
-                      ),
-                      _actionBtn(
-                        icon: Icons.remove,
-                        label: 'Выдача',
-                        color: AppColors.amb,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _openTransactionDialog(context, db, it,
-                              StockTransactionType.outcome,
-                              authorId: widget.currentUser?.id);
-                        },
-                      ),
-                      _actionBtn(
-                        icon: Icons.delete_outline,
-                        label: 'Списать',
-                        color: AppColors.red,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _openTransactionDialog(context, db, it,
-                              StockTransactionType.writeOff,
-                              authorId: widget.currentUser?.id);
-                        },
-                      ),
-                      _actionBtn(
-                        icon: Icons.swap_horiz,
-                        label: 'Переместить',
-                        color: AppColors.cyn,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _openTransactionDialog(context, db, it,
-                              StockTransactionType.transfer,
-                              authorId: widget.currentUser?.id);
-                        },
-                      ),
-                      _actionBtn(
-                        icon: Icons.fact_check_outlined,
-                        label: 'Инвентаризация',
-                        color: AppColors.pur,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _openTransactionDialog(context, db, it,
-                              StockTransactionType.inventory,
-                              authorId: widget.currentUser?.id);
-                        },
-                      ),
+                      if (it.kind == InventoryItemKind.item) ...[
+                        _actionBtn(
+                          icon: Icons.qr_code,
+                          label: 'QR',
+                          color: AppColors.mut,
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            showQrDialog(
+                              context,
+                              title: it.name,
+                              subtitle: 'SKU: ${it.sku}',
+                              qrData: 'SKU:${it.sku}',
+                            );
+                          },
+                        ),
+                        _actionBtn(
+                          icon: Icons.add,
+                          label: 'Приход',
+                          color: AppColors.grn,
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _openTransactionDialog(context, db, it,
+                                StockTransactionType.income,
+                                authorId: widget.currentUser?.id);
+                          },
+                        ),
+                        _actionBtn(
+                          icon: Icons.remove,
+                          label: 'Выдача',
+                          color: AppColors.amb,
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _openTransactionDialog(context, db, it,
+                                StockTransactionType.outcome,
+                                authorId: widget.currentUser?.id);
+                          },
+                        ),
+                        _actionBtn(
+                          icon: Icons.delete_outline,
+                          label: 'Списать',
+                          color: AppColors.red,
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _openTransactionDialog(context, db, it,
+                                StockTransactionType.writeOff,
+                                authorId: widget.currentUser?.id);
+                          },
+                        ),
+                        _actionBtn(
+                          icon: Icons.swap_horiz,
+                          label: 'Переместить',
+                          color: AppColors.cyn,
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _openTransactionDialog(context, db, it,
+                                StockTransactionType.transfer,
+                                authorId: widget.currentUser?.id);
+                          },
+                        ),
+                        _actionBtn(
+                          icon: Icons.fact_check_outlined,
+                          label: 'Инвентаризация',
+                          color: AppColors.pur,
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _openTransactionDialog(context, db, it,
+                                StockTransactionType.inventory,
+                                authorId: widget.currentUser?.id);
+                          },
+                        ),
+                      ],
                     ]),
                   ],
                 ),
@@ -1414,168 +1604,240 @@ class _ItemsTabState extends State<_ItemsTab> {
     InventoryCategory cat =
         editing?.category ?? InventoryCategory.bearing;
     InventoryUnit unit = editing?.unit ?? InventoryUnit.piece;
+    InventoryItemKind kind = editing?.kind ?? InventoryItemKind.item;
+    String? parentId = editing?.parentId;
 
     final ok = await showDialog<bool>(
       context: context,
       useRootNavigator: true,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          backgroundColor: AppColors.panel,
-          title: Text(editing == null
-              ? 'Новая позиция'
-              : 'Редактировать позицию'),
-          content: SizedBox(
-            width: 460,
-            child: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Row(children: [
-                  Expanded(
-                    child: TextField(
-                      controller: skuCtrl,
-                      decoration: const InputDecoration(
-                          labelText: 'SKU *', hintText: 'BR-6204'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
+        builder: (ctx, setS) {
+          final groupCandidates = db.inventoryItems
+              .where((x) =>
+                  x.kind == InventoryItemKind.group &&
+                  x.id != editing?.id &&
+                  (editing == null ||
+                      !db.isDescendantOf(x.id, editing.id)))
+              .toList()
+            ..sort((a, b) => a.name.compareTo(b.name));
+
+          return AlertDialog(
+            backgroundColor: AppColors.panel,
+            title: Text(editing == null
+                ? 'Новая номенклатура'
+                : 'Редактировать номенклатуру'),
+            content: SizedBox(
+              width: 480,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(children: [
+                      Expanded(
+                        child: DropdownButtonFormField<InventoryItemKind>(
+                          initialValue: kind,
+                          decoration:
+                              const InputDecoration(labelText: 'Тип *'),
+                          items: [
+                            for (final k in InventoryItemKind.values)
+                              DropdownMenuItem(
+                                  value: k, child: Text(k.label)),
+                          ],
+                          onChanged: (v) => setS(() => kind = v ?? kind),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: DropdownButtonFormField<String?>(
+                          initialValue: parentId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                              labelText: 'Родительская группа'),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                                value: null, child: Text('— Корень —')),
+                            for (final g in groupCandidates)
+                              DropdownMenuItem<String?>(
+                                  value: g.id,
+                                  child: Text(g.name,
+                                      overflow: TextOverflow.ellipsis)),
+                          ],
+                          onChanged: (v) => setS(() => parentId = v),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 12),
+                    TextField(
                       controller: nameCtrl,
                       decoration: const InputDecoration(
                           labelText: 'Название *',
-                          hintText: 'Подшипник 6204'),
+                          hintText: 'Подшипники / Подшипник 6204'),
                     ),
-                  ),
-                ]),
-                const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(
-                    child: DropdownButtonFormField<InventoryCategory>(
-                      initialValue: cat,
-                      isExpanded: true,
-                      decoration:
-                          const InputDecoration(labelText: 'Категория'),
-                      items: [
-                        for (final c in InventoryCategory.values)
-                          DropdownMenuItem(value: c, child: Text(c.label)),
-                      ],
-                      onChanged: (v) => setS(() => cat = v ?? cat),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButtonFormField<InventoryUnit>(
-                      initialValue: unit,
-                      isExpanded: true,
-                      decoration:
-                          const InputDecoration(labelText: 'Ед. изм.'),
-                      items: [
-                        for (final u in InventoryUnit.values)
-                          DropdownMenuItem(value: u, child: Text(u.label)),
-                      ],
-                      onChanged: (v) => setS(() => unit = v ?? unit),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(
-                    child: TextField(
-                      controller: minCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
-                      decoration: const InputDecoration(
-                          labelText: 'Мин. остаток'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: priceCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
-                      decoration: const InputDecoration(
-                          labelText: 'Цена, ₽', hintText: 'необязательно'),
-                    ),
-                  ),
-                ]),
-              ]),
-            ),
-          ),
-          actions: [
-            if (editing != null)
-              TextButton(
-                style:
-                    TextButton.styleFrom(foregroundColor: AppColors.red),
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: ctx,
-                    builder: (c) => AlertDialog(
-                      backgroundColor: AppColors.panel,
-                      title: const Text('Удалить позицию?'),
-                      content: const Text(
-                          'Все операции по этой позиции тоже будут удалены.',
-                          style: TextStyle(
-                              fontSize: 13, color: AppColors.mut)),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.pop(c, false),
-                            child: const Text('Отмена')),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.red),
-                          onPressed: () => Navigator.pop(c, true),
-                          child: const Text('Удалить'),
+                    const SizedBox(height: 12),
+                    if (kind == InventoryItemKind.item) ...[
+                      TextField(
+                        controller: skuCtrl,
+                        decoration: const InputDecoration(
+                            labelText: 'SKU *', hintText: 'BR-6204'),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(children: [
+                        Expanded(
+                          child:
+                              DropdownButtonFormField<InventoryCategory>(
+                            initialValue: cat,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                                labelText: 'Категория'),
+                            items: [
+                              for (final c in InventoryCategory.values)
+                                DropdownMenuItem(
+                                    value: c, child: Text(c.label)),
+                            ],
+                            onChanged: (v) => setS(() => cat = v ?? cat),
+                          ),
                         ),
-                      ],
-                    ),
-                  );
-                  if (confirm == true) {
-                    db.deleteInventoryItem(editing.id);
-                    if (ctx.mounted) Navigator.pop(ctx, false);
-                  }
-                },
-                child: const Text('Удалить'),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<InventoryUnit>(
+                            initialValue: unit,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                                labelText: 'Ед. изм.'),
+                            items: [
+                              for (final u in InventoryUnit.values)
+                                DropdownMenuItem(
+                                    value: u, child: Text(u.label)),
+                            ],
+                            onChanged: (v) => setS(() => unit = v ?? unit),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 12),
+                      Row(children: [
+                        Expanded(
+                          child: TextField(
+                            controller: minCtrl,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
+                            decoration: const InputDecoration(
+                                labelText: 'Мин. остаток'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: priceCtrl,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
+                            decoration: const InputDecoration(
+                                labelText: 'Цена, ₽',
+                                hintText: 'необязательно'),
+                          ),
+                        ),
+                      ]),
+                    ],
+                  ],
+                ),
               ),
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204)),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(editing == null ? 'Создать' : 'Сохранить'),
             ),
-          ],
-        ),
+            actions: [
+              if (editing != null)
+                TextButton(
+                  style:
+                      TextButton.styleFrom(foregroundColor: AppColors.red),
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: ctx,
+                      builder: (c) => AlertDialog(
+                        backgroundColor: AppColors.panel,
+                        title: const Text('Удалить?'),
+                        content: const Text(
+                            'Если внутри есть вложенные элементы — удаление будет отклонено.',
+                            style: TextStyle(
+                                fontSize: 13, color: AppColors.mut)),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(c, false),
+                              child: const Text('Отмена')),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.red),
+                            onPressed: () => Navigator.pop(c, true),
+                            child: const Text('Удалить'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true) {
+                      final err = db.deleteInventoryItemSafe(editing.id);
+                      if (err != null) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text(err)));
+                        }
+                        return;
+                      }
+                      if (ctx.mounted) Navigator.pop(ctx, false);
+                    }
+                  },
+                  child: const Text('Удалить'),
+                ),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Отмена')),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.amb,
+                    foregroundColor: const Color(0xFF1C1204)),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(editing == null ? 'Создать' : 'Сохранить'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
     if (ok != true) return;
 
-    final sku = skuCtrl.text.trim();
     final name = nameCtrl.text.trim();
+    if (name.isEmpty) {
+      _snack('Название обязательно');
+      return;
+    }
+
+    String sku = '';
+    if (kind == InventoryItemKind.item) {
+      sku = skuCtrl.text.trim();
+      if (sku.isEmpty) {
+        _snack('SKU обязателен для позиции');
+        return;
+      }
+      final conflict = db.inventoryItems.firstWhere(
+        (x) =>
+            x.kind == InventoryItemKind.item &&
+            x.sku.toLowerCase() == sku.toLowerCase() &&
+            x.id != editing?.id,
+        orElse: () => InventoryItem(
+            id: '', sku: '', name: '', category: cat, unit: unit),
+      );
+      if (conflict.id.isNotEmpty) {
+        _snack('SKU «$sku» уже занят');
+        return;
+      }
+    } else {
+      sku = editing?.sku ??
+          'GRP-${DateTime.now().millisecondsSinceEpoch}';
+    }
+
     final min = int.tryParse(minCtrl.text.trim()) ?? 0;
     final price =
         double.tryParse(priceCtrl.text.trim().replaceAll(',', '.'));
-
-    if (sku.isEmpty || name.isEmpty) {
-      _snack('SKU и название обязательны');
-      return;
-    }
-
-    final conflict = db.inventoryItems.firstWhere(
-      (x) =>
-          x.sku.toLowerCase() == sku.toLowerCase() && x.id != editing?.id,
-      orElse: () => InventoryItem(
-          id: '', sku: '', name: '', category: cat, unit: unit),
-    );
-    if (conflict.id.isNotEmpty) {
-      _snack('SKU «$sku» уже занят');
-      return;
-    }
 
     if (editing == null) {
       db.addInventoryItem(InventoryItem(
@@ -1584,17 +1846,24 @@ class _ItemsTabState extends State<_ItemsTab> {
         name: name,
         category: cat,
         unit: unit,
-        minQuantity: min,
-        price: price,
+        minQuantity: kind == InventoryItemKind.group ? 0 : min,
+        price: kind == InventoryItemKind.group ? null : price,
+        parentId: parentId,
+        kind: kind,
       ));
-      _snack('Позиция создана');
+      _snack(kind == InventoryItemKind.group
+          ? 'Группа создана'
+          : 'Позиция создана');
     } else {
       editing.sku = sku;
       editing.name = name;
       editing.category = cat;
       editing.unit = unit;
-      editing.minQuantity = min;
-      editing.price = price;
+      editing.minQuantity =
+          kind == InventoryItemKind.group ? 0 : min;
+      editing.price = kind == InventoryItemKind.group ? null : price;
+      editing.parentId = parentId;
+      editing.kind = kind;
       db.updateInventoryItem(editing);
       _snack('Сохранено');
     }
@@ -1779,8 +2048,10 @@ class _LocationsTabState extends State<_LocationsTab> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Row(children: [
-                Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
-                    size: 18, color: AppColors.mut),
+                Icon(
+                    collapsed ? Icons.chevron_right : Icons.expand_more,
+                    size: 18,
+                    color: AppColors.mut),
                 const SizedBox(width: 6),
                 const Icon(Icons.park_outlined,
                     size: 15, color: AppColors.cyn),
@@ -1952,6 +2223,21 @@ class _LocationsTabState extends State<_LocationsTab> {
                     const SizedBox(height: 6),
                     Wrap(spacing: 6, runSpacing: 6, children: [
                       _actionBtn(
+                        icon: Icons.qr_code,
+                        label: 'QR полки',
+                        color: AppColors.amb,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          showQrDialog(
+                            context,
+                            title: loc.code,
+                            subtitle:
+                                loc.name.isEmpty ? 'Полка' : loc.name,
+                            qrData: 'LOC:${loc.code}',
+                          );
+                        },
+                      ),
+                      _actionBtn(
                         icon: Icons.add,
                         label: 'Приход',
                         color: AppColors.grn,
@@ -1992,11 +2278,13 @@ class _LocationsTabState extends State<_LocationsTab> {
     );
   }
 
-  Widget _shelfItemRow(AppDatabase db, StorageLocation loc, InventoryItem it) {
+  Widget _shelfItemRow(
+      AppDatabase db, StorageLocation loc, InventoryItem it) {
     final qty = db.stockAt(it.id, loc.id);
     final belowMin = qty < it.minQuantity;
     return InkWell(
-      onTap: () => _openTransactionDialogFromShelf(context, db, loc, it),
+      onTap: () =>
+          _openTransactionDialogFromShelf(context, db, loc, it),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
@@ -2176,18 +2464,15 @@ class _LocationsTabState extends State<_LocationsTab> {
       AppDatabase db,
       StorageLocation loc,
       StockTransactionType type) async {
-    if (db.inventoryItems.isEmpty) {
+    final leaves = db.inventoryItems
+        .where((x) => x.kind == InventoryItemKind.item)
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    if (leaves.isEmpty) {
       _snack('Сначала создайте хотя бы одну позицию');
       return;
     }
-    final item = await _pickItem(db);
-    if (item == null) return;
-    _openTransactionDialog(context, db, item, type,
-        prefilledLocation: loc);
-  }
-
-  Future<InventoryItem?> _pickItem(AppDatabase db) async {
-    return showDialog<InventoryItem>(
+    final item = await showDialog<InventoryItem>(
       context: context,
       useRootNavigator: true,
       builder: (ctx) => AlertDialog(
@@ -2198,9 +2483,9 @@ class _LocationsTabState extends State<_LocationsTab> {
           height: 400,
           child: ListView.builder(
             shrinkWrap: true,
-            itemCount: db.inventoryItems.length,
+            itemCount: leaves.length,
             itemBuilder: (_, i) {
-              final it = db.inventoryItems[i];
+              final it = leaves[i];
               return ListTile(
                 title:
                     Text(it.name, style: const TextStyle(fontSize: 13)),
@@ -2218,6 +2503,9 @@ class _LocationsTabState extends State<_LocationsTab> {
         ],
       ),
     );
+    if (item == null) return;
+    _openTransactionDialog(context, db, item, type,
+        prefilledLocation: loc);
   }
 
   Future<void> _openTransactionDialogFromShelf(
