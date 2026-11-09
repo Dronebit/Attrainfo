@@ -15,7 +15,7 @@ dependencies:
   shared_preferences: ^2.3.0
   nfc_manager: ^4.2.1
   url_launcher: ^6.3.0
-  flutter_zxing: ^3.1.0 
+  wxscan_live: ^0.1.7
   qr_flutter: ^4.1.0      
 
 dev_dependencies:
