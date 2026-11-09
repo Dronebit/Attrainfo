@@ -15,7 +15,6 @@ class ScanResult {
 
 enum ScanKind { location, item, unknown }
 
-// Теперь передаем db, чтобы сканер мог найти название
 Future<ScanResult?> showScannerSheet(BuildContext context, AppDatabase db) {
   return showModalBottomSheet<ScanResult>(
     context: context,
@@ -34,73 +33,86 @@ class _ScannerSheet extends StatefulWidget {
 
 class _ScannerSheetState extends State<_ScannerSheet> {
   bool _isProcessing = false;
-  Code? _lastCode;
   
-  // Найденные объекты для карточки
+  // Найденные объекты
   InventoryItem? _foundItem;
   StorageLocation? _foundLoc;
   String? _rawCodeString;
 
-  // Конвертируем Position из ZXing в Rect
-  Rect? _positionToRect(Position? pos) {
-    if (pos == null) return null;
-    final left = [pos.topLeftX, pos.bottomLeftX].reduce((a, b) => a < b ? a : b).toDouble();
-    final right = [pos.topRightX, pos.bottomRightX].reduce((a, b) => a > b ? a : b).toDouble();
-    final top = [pos.topLeftY, pos.topRightY].reduce((a, b) => a < b ? a : b).toDouble();
-    final bottom = [pos.bottomLeftY, pos.bottomRightY].reduce((a, b) => a > b ? a : b).toDouble();
-    return Rect.fromLTRB(left, top, right, bottom);
-  }
+  // Регионы для отрисовки рамок (AR)
+  List<CodeHitRegion> _hitRegions = [];
 
-  void _onScan(Code code) {
-    if (_isProcessing) return; // Игнорируем, если карточка уже открыта
-    if (!code.isValid || code.text == null || code.text!.isEmpty) return;
-
-    HapticFeedback.mediumImpact();
-
-    final raw = code.text!;
-    String searchCode = raw;
-    ScanKind kind = ScanKind.unknown;
-
-    if (raw.startsWith('LOC:')) {
-      searchCode = raw.substring(4);
-      kind = ScanKind.location;
-    } else if (raw.startsWith('SKU:')) {
-      searchCode = raw.substring(4);
-      kind = ScanKind.item;
+  void _onMultiScan(Codes codes, Size widgetSize) {
+    if (codes.codes.isEmpty) {
+      if (_hitRegions.isNotEmpty) setState(() => _hitRegions = []);
+      return;
     }
 
-    // Ищем в базе
-    InventoryItem? item;
-    StorageLocation? loc;
+    // 1. Обновляем рамки для ВСЕХ найденных кодов (трекинг)
+    final regions = codeHitRegions(codes.codes, widgetSize);
+    
+    // 2. Если мы еще не зафиксировали объект, пытаемся найти его в базе
+    if (!_isProcessing) {
+      // Берем первый валидный код
+      final validCode = codes.codes.firstWhere((c) => c.isValid && c.text != null && c.text!.isNotEmpty, orElse: () => Code());
+      
+      if (validCode.isValid && validCode.text != null) {
+        HapticFeedback.mediumImpact();
+        
+        final raw = validCode.text!;
+        String searchCode = raw;
+        ScanKind kind = ScanKind.unknown;
 
-    if (kind == ScanKind.location) {
-      loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
-    } else if (kind == ScanKind.item) {
-      item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
-    } else {
-      // Если без префикса - ищем везде
-      loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
-      if (loc == null) {
-        item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+        if (raw.startsWith('LOC:')) {
+          searchCode = raw.substring(4);
+          kind = ScanKind.location;
+        } else if (raw.startsWith('SKU:')) {
+          searchCode = raw.substring(4);
+          kind = ScanKind.item;
+        }
+
+        InventoryItem? item;
+        StorageLocation? loc;
+
+        if (kind == ScanKind.location) {
+          loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+        } else if (kind == ScanKind.item) {
+          item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+        } else {
+          loc = widget.db.storageLocations.where((l) => l.code.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+          if (loc == null) {
+            item = widget.db.inventoryItems.where((i) => i.sku.toLowerCase() == searchCode.toLowerCase()).firstOrNull;
+          }
+        }
+
+        // Если код распознан (даже если не найден в БД), фиксируем состояние
+        _isProcessing = true;
+        _rawCodeString = raw;
+        _foundItem = item;
+        _foundLoc = loc;
       }
     }
 
+    // Обновляем стейт с новыми рамками и (возможно) карточкой
     setState(() {
-      _isProcessing = true;
-      _lastCode = code;
-      _rawCodeString = raw;
-      _foundItem = item;
-      _foundLoc = loc;
+      _hitRegions = regions;
     });
+  }
+
+  void _onScanFailure(Code code) {
+    // Если код потерян из виду — убираем рамку
+    if (mounted && _hitRegions.isNotEmpty) {
+      setState(() => _hitRegions = []);
+    }
   }
 
   void _resetScanner() {
     setState(() {
       _isProcessing = false;
-      _lastCode = null;
       _foundItem = null;
       _foundLoc = null;
       _rawCodeString = null;
+      _hitRegions = [];
     });
   }
 
@@ -146,7 +158,6 @@ class _ScannerSheetState extends State<_ScannerSheet> {
     if (ok == null || ok.isEmpty) return;
     if (!mounted) return;
     
-    // Эмулируем скан для ручного ввода
     Navigator.pop(context, ScanResult(
       ok, 
       ok.startsWith('LOC:') ? ScanKind.location : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown), 
@@ -192,45 +203,54 @@ class _ScannerSheetState extends State<_ScannerSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ReaderWidget(
-                      onScan: _onScan,
-                      showScannerOverlay: false,
-                      showFlashlight: true, // Фонарик
-                      showGallery: false,
-                      showToggleCamera: false,
-                    ),
-                    
-                    // Статичная рамка (когда ничего не сканируется)
-                    if (!_isProcessing)
-                      Container(
-                        width: 250,
-                        height: 250,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: AppColors.amb, width: 3),
-                          borderRadius: BorderRadius.circular(16),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // 1. Камера
+                        ReaderWidget(
+                          showScannerOverlay: false, // Отключаем встроенную рамку ZXing
+                          showFlashlight: true,
+                          showGallery: false,
+                          showToggleCamera: false,
+                          isMultiScan: true,         // Включаем мульти-скан для трекинга
+                          onMultiScan: (codes) => _onMultiScan(codes, constraints.biggest),
+                          onScanFailure: _onScanFailure,
                         ),
-                      ),
-                      
-                    // AR-рамка (когда код найден)
-                    if (_isProcessing && _lastCode?.position != null)
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: _ArOverlayPainter(_positionToRect(_lastCode!.position)),
-                        ),
-                      ),
+                        
+                        // 2. Статичная рамка прицела (когда объект еще не зафиксирован)
+                        if (!_isProcessing)
+                          Container(
+                            width: 250,
+                            height: 250,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: AppColors.amb, width: 3),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          
+                        // 3. AR-рамки (отрисовываем поверх камеры)
+                        if (_hitRegions.isNotEmpty)
+                          Positioned.fill(
+                            child: IgnorePointer( // Чтобы не блокировать нажатия
+                              child: CustomPaint(
+                                painter: _TrackingOverlayPainter(_hitRegions),
+                              ),
+                            ),
+                          ),
 
-                    // ВСПЛЫВАЮЩАЯ КАРТОЧКА ВНИЗУ
-                    if (_isProcessing)
-                      Positioned(
-                        left: 16,
-                        right: 16,
-                        bottom: 20,
-                        child: _buildFloatingCard(),
-                      ),
-                  ],
+                        // 4. Всплывающая карточка
+                        if (_isProcessing)
+                          Positioned(
+                            left: 16,
+                            right: 16,
+                            bottom: 20,
+                            child: _buildFloatingCard(),
+                          ),
+                      ],
+                    );
+                  }
                 ),
               ),
             ),
@@ -338,53 +358,61 @@ class _ScannerSheetState extends State<_ScannerSheet> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// AR-Оверлей для отрисовки зеленой рамки поверх кода
+// Painter для отрисовки AR-рамок
 // ─────────────────────────────────────────────────────────────
-class _ArOverlayPainter extends CustomPainter {
-  final Rect? position;
-  _ArOverlayPainter(this.position);
+class _TrackingOverlayPainter extends CustomPainter {
+  final List<CodeHitRegion> regions;
+
+  _TrackingOverlayPainter(this.regions);
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (position == null) return;
+    // Полупрозрачная заливка
+    final fillPaint = Paint()
+      ..color = AppColors.grn.withValues(alpha: 0.2)
+      ..style = PaintingStyle.fill;
 
-    // Красивое свечение
-    final glowPaint = Paint()
-      ..color = AppColors.grn.withValues(alpha: 0.3)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 12.0
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-
-    // Четкая линия
-    final paint = Paint()
+    // Яркая обводка
+    final borderPaint = Paint()
       ..color = AppColors.grn
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3.0;
 
-    // Рисуем прямоугольник вокруг кода (с небольшим отступом)
-    final rect = Rect.fromLTRB(
-      position!.left - 4,
-      position!.top - 4,
-      position!.right + 4,
-      position!.bottom + 4,
-    );
+    // Свечение
+    final glowPaint = Paint()
+      ..color = AppColors.grn.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
-    canvas.drawRect(rect, glowPaint);
-    canvas.drawRect(rect, paint);
+    for (final region in regions) {
+      final rect = region.rect;
 
-    // Рисуем AR-уголки
-    _drawCorner(canvas, rect.topLeft, 1, 1, paint);
-    _drawCorner(canvas, rect.topRight, -1, 1, paint);
-    _drawCorner(canvas, rect.bottomLeft, 1, -1, paint);
-    _drawCorner(canvas, rect.bottomRight, -1, -1, paint);
+      // 1. Полупрозрачный фон
+      canvas.drawRect(rect, fillPaint);
+      
+      // 2. Свечение
+      canvas.drawRect(rect, glowPaint);
+      
+      // 3. Четкая рамка
+      canvas.drawRect(rect, borderPaint);
+
+      // 4. Уголки (опционально для красоты)
+      _drawCorner(canvas, rect.topLeft, 1, 1, borderPaint);
+      _drawCorner(canvas, rect.topRight, -1, 1, borderPaint);
+      _drawCorner(canvas, rect.bottomLeft, 1, -1, borderPaint);
+      _drawCorner(canvas, rect.bottomRight, -1, -1, borderPaint);
+    }
   }
 
   void _drawCorner(Canvas canvas, Offset p, double dx, double dy, Paint paint) {
-    const len = 20.0;
+    const len = 15.0;
     canvas.drawLine(p, p + Offset(len * dx, 0), paint);
     canvas.drawLine(p, p + Offset(0, len * dy), paint);
   }
 
   @override
-  bool shouldRepaint(covariant _ArOverlayPainter oldDelegate) => oldDelegate.position != position;
+  bool shouldRepaint(covariant _TrackingOverlayPainter oldDelegate) {
+    return oldDelegate.regions != regions;
+  }
 }
