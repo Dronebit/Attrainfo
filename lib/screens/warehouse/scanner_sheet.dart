@@ -11,7 +11,7 @@ import '../../models/inventory.dart';
 import '../../theme.dart';
 
 // ═══════════════════════════════════════════════════════════════════
-// Публичный API
+// Публичный API (совместим с previous)
 // ═══════════════════════════════════════════════════════════════════
 
 class AppScanResult {
@@ -63,7 +63,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
   // Инициализация
   bool _initializing = true;
   String? _initError;
-  bool _hasTorch = false; // проверяется один раз через controller.hasTorch()
+  bool _hasTorch = false;
 
   DateTime _lastHaptic = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -600,7 +600,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// AR-оверлей (по corners)
+// AR-оверлей (по corners: dx / dy)
 // ═══════════════════════════════════════════════════════════════════
 
 class _TrackingPainter extends CustomPainter {
@@ -611,6 +611,7 @@ class _TrackingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Масштаб для BoxFit.cover
     final scale = math.max(
       size.width / previewSize.rotatedWidth,
       size.height / previewSize.rotatedHeight,
@@ -636,14 +637,14 @@ class _TrackingPainter extends CustomPainter {
     for (final result in results) {
       if (result.corners.length < 4) continue;
 
-      // Строим ограничивающий прямоугольник по четырём углам
+      // Ограничивающий прямоугольник по четырём углам (dx/dy — уже double)
       double minX = double.infinity, minY = double.infinity;
       double maxX = -double.infinity, maxY = -double.infinity;
       for (final p in result.corners) {
-        if (p.x < minX) minX = p.x.toDouble();
-        if (p.y < minY) minY = p.y.toDouble();
-        if (p.x > maxX) maxX = p.x.toDouble();
-        if (p.y > maxY) maxY = p.y.toDouble();
+        if (p.dx < minX) minX = p.dx;
+        if (p.dy < minY) minY = p.dy;
+        if (p.dx > maxX) maxX = p.dx;
+        if (p.dy > maxY) maxY = p.dy;
       }
 
       final screenRect = Rect.fromLTWH(
