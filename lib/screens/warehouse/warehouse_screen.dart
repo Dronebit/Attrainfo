@@ -338,50 +338,50 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   Future<void> _onScan(AppDatabase db) async {
-    final result = await showScannerSheet(context,db);
-    if (result == null || !mounted) return;
+  final result = await showScannerSheet(context, db);
+  if (result == null || !mounted) return;
 
-    StorageLocation? loc;
-    InventoryItem? item;
+  StorageLocation? loc;
+  InventoryItem? item;
 
-    if (result.kind == ScanKind.location) {
-      final m = db.storageLocations
-          .where((l) => l.code.toLowerCase() == result.code.toLowerCase())
-          .toList();
-      loc = m.isEmpty ? null : m.first;
-    } else if (result.kind == ScanKind.item) {
-      final m = db.inventoryItems
+  if (result.kind == ScanKind.location) {
+    final m = db.storageLocations
+        .where((l) => l.code.toLowerCase() == result.code.toLowerCase())
+        .toList();
+    loc = m.isEmpty ? null : m.first;
+  } else if (result.kind == ScanKind.item) {
+    final m = db.inventoryItems
+        .where((i) =>
+            i.kind == InventoryItemKind.item &&
+            i.sku.toLowerCase() == result.code.toLowerCase())
+        .toList();
+    item = m.isEmpty ? null : m.first;
+  } else {
+    final lm = db.storageLocations
+        .where((l) => l.code.toLowerCase() == result.code.toLowerCase())
+        .toList();
+    if (lm.isNotEmpty) {
+      loc = lm.first;
+    } else {
+      final im = db.inventoryItems
           .where((i) =>
               i.kind == InventoryItemKind.item &&
               i.sku.toLowerCase() == result.code.toLowerCase())
           .toList();
-      item = m.isEmpty ? null : m.first;
-    } else {
-      final lm = db.storageLocations
-          .where((l) => l.code.toLowerCase() == result.code.toLowerCase())
-          .toList();
-      if (lm.isNotEmpty) {
-        loc = lm.first;
-      } else {
-        final im = db.inventoryItems
-            .where((i) =>
-                i.kind == InventoryItemKind.item &&
-                i.sku.toLowerCase() == result.code.toLowerCase())
-            .toList();
-        item = im.isEmpty ? null : im.first;
-      }
+      item = im.isEmpty ? null : im.first;
     }
-
-    if (loc != null) {
-      _showShelfCard(db, loc);
-      return;
-    }
-    if (item != null) {
-      _showItemCard(db, item);
-      return;
-    }
-    _snack('Код «${result.code}» не найден');
   }
+
+  if (loc != null) {
+    _showShelfCard(db, loc);
+    return;
+  }
+  if (item != null) {
+    _showItemCard(db, item);
+    return;
+  }
+  _snack('Код «${result.code}» не найден');
+}
 
   void _showShelfCard(AppDatabase db, StorageLocation loc) {
     final items = db.itemsAtLocation(loc.id);
