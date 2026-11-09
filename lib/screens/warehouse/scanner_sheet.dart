@@ -35,14 +35,10 @@ class _ScannerSheetState extends State<_ScannerSheet> {
 
   // Конвертируем Position из ZXing в Rect для CustomPaint
   Rect? _positionToRect(Position? pos) {
-    if (pos == null) return null;
-    return Rect.fromLTRB(
-      pos.left.toDouble(),
-      pos.top.toDouble(),
-      pos.right.toDouble(),
-      pos.bottom.toDouble(),
-    );
-  }
+  if (pos == null) return null;
+  // Используем встроенный метод toRect() из flutter_zxing
+  return pos.toRect();
+}
 
   void _onScan(Code code) {
     if (_handled) return;
