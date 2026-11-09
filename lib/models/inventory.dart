@@ -90,17 +90,30 @@ class StorageLocation {
 // ─────────────────────────────────────────────
 // Позиция (SKU) — то, что учитываем
 // ─────────────────────────────────────────────
+enum InventoryItemKind { group, item }
+
+extension InventoryItemKindX on InventoryItemKind {
+  String get label => const {
+        InventoryItemKind.group: 'Группа',
+        InventoryItemKind.item: 'Позиция',
+      }[this]!;
+}
+
 class InventoryItem {
   final String id;
-  String sku;              // "BR-6204"
-  String name;             // "Подшипник 6204"
+  String sku;
+  String name;
   InventoryCategory category;
   InventoryUnit unit;
-  int minQuantity;         // минимальный остаток (для предупреждений)
-  double? price;           // цена за единицу (для отчётов)
-  String? photoPath;       // путь к фото позиции
-  List<String> compatibleRideIds;  // к каким аттракционам подходит
+  int minQuantity;
+  double? price;
+  String? photoPath;
+  List<String> compatibleRideIds;
   String? note;
+
+  // ─── Дерево ───
+  String? parentId;
+  InventoryItemKind kind;
 
   InventoryItem({
     required this.id,
@@ -113,6 +126,8 @@ class InventoryItem {
     this.photoPath,
     List<String>? compatibleRideIds,
     this.note,
+    this.parentId,
+    this.kind = InventoryItemKind.item,
   }) : compatibleRideIds = compatibleRideIds ?? [];
 
   Map<String, dynamic> toJson() => {
@@ -126,6 +141,8 @@ class InventoryItem {
         'photoPath': photoPath,
         'compatibleRideIds': compatibleRideIds,
         'note': note,
+        'parentId': parentId,
+        'kind': kind.name,
       };
 
   factory InventoryItem.fromJson(Map<String, dynamic> j) => InventoryItem(
@@ -146,6 +163,11 @@ class InventoryItem {
         compatibleRideIds:
             (j['compatibleRideIds'] as List?)?.cast<String>() ?? [],
         note: j['note'],
+        parentId: j['parentId'],
+        kind: InventoryItemKind.values.firstWhere(
+          (e) => e.name == j['kind'],
+          orElse: () => InventoryItemKind.item,
+        ),
       );
 }
 
