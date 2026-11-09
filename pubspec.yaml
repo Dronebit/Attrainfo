@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+    assets:
+      - assets/models/
+  
   provider: ^6.1.2
   intl: ^0.19.0
   fl_chart: ^0.68.0
