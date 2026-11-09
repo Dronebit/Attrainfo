@@ -338,7 +338,7 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   Future<void> _onScan(AppDatabase db) async {
-    final result = await showScannerSheet(context);
+    final result = await showScannerSheet(context,db);
     if (result == null || !mounted) return;
 
     StorageLocation? loc;
