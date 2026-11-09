@@ -33,6 +33,17 @@ class _ScannerSheetState extends State<_ScannerSheet> {
   bool _handled = false;
   Code? _lastCode; // Для отрисовки AR-рамки
 
+  // Конвертируем Position из ZXing в Rect для CustomPaint
+  Rect? _positionToRect(Position? pos) {
+    if (pos == null) return null;
+    return Rect.fromLTRB(
+      pos.left.toDouble(),
+      pos.top.toDouble(),
+      pos.right.toDouble(),
+      pos.bottom.toDouble(),
+    );
+  }
+
   void _onScan(Code code) {
     if (_handled) return;
     if (!code.isValid || code.text == null || code.text!.isEmpty) return;
@@ -146,11 +157,11 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Камера (скрываем все встроенные кнопки ZXing)
+                    // Камера (скрываем встроенные элементы ZXing)
                     ReaderWidget(
                       onScan: _onScan,
-                      showScannerOverlay: false, // Убираем статичную рамку ZXing
-                      showFlashlight: false,     // Убираем их кнопку фонарика
+                      showScannerOverlay: false, 
+                      showFlashlight: false,     
                       showGallery: false,
                       showToggleCamera: false,
                     ),
@@ -170,7 +181,10 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                     if (_lastCode != null && _lastCode!.position != null)
                       Positioned.fill(
                         child: CustomPaint(
-                          painter: _ArOverlayPainter(_lastCode!.position),
+                          // Передаем сконвертированный Rect
+                          painter: _ArOverlayPainter(
+                            _positionToRect(_lastCode!.position),
+                          ),
                         ),
                       ),
                   ],
@@ -246,7 +260,6 @@ class _ArOverlayPainter extends CustomPainter {
     canvas.drawRect(rect, paint);
 
     // Рисуем AR-уголки
-    const len = 20.0;
     _drawCorner(canvas, rect.topLeft, 1, 1, paint);
     _drawCorner(canvas, rect.topRight, -1, 1, paint);
     _drawCorner(canvas, rect.bottomLeft, 1, -1, paint);
@@ -254,8 +267,9 @@ class _ArOverlayPainter extends CustomPainter {
   }
 
   void _drawCorner(Canvas canvas, Offset p, double dx, double dy, Paint paint) {
-    canvas.drawLine(p, p + Offset(20 * dx, 0), paint);
-    canvas.drawLine(p, p + Offset(0, 20 * dy), paint);
+    const len = 20.0;
+    canvas.drawLine(p, p + Offset(len * dx, 0), paint);
+    canvas.drawLine(p, p + Offset(0, len * dy), paint);
   }
 
   @override
