@@ -16,6 +16,8 @@ dependencies:
   nfc_manager: ^4.2.1
   url_launcher: ^6.3.0
   wxscan_live: ^0.1.7
+  wxscan: ^0.1.7         # <-- ДОБАВИТЬ
+  path_provider: ^2.1.3   # <-- ДОБАВИТЬ
   qr_flutter: ^4.1.0      
   permission_handler: ^11.3.1
 
