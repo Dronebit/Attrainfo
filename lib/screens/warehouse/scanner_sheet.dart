@@ -66,9 +66,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
   int _rawFrameCount = 0;
   int _nonEmptyFrames = 0;
 
-  Timer? _toggleTimer;
-  Timer? _fallbackTimer;
   Timer? _watchdogTimer;
+  bool _isRestarting = false;
 
   DebugLog get _log => DebugLog.instance;
 
@@ -77,51 +76,48 @@ class _ScannerSheetState extends State<_ScannerSheet>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _log.info('[Scanner] initState');
-    _boot();
+    
+    // Даем шторке время на анимацию открытия (300 мс) + инициализацию Surface
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) _boot();
+    });
   }
 
   Future<void> _boot() async {
     _log.info('[Scanner] boot: start');
     try {
       final status = await Permission.camera.request();
-      _log.info('[Scanner] permission.camera = $status');
       if (!status.isGranted) {
         if (mounted) {
           setState(() {
             _initializing = false;
-            _initError = 'Нет разрешения на камеру.\n'
-                'Настройки → Приложения → АттраКонтроль → Камера';
+            _initError = 'Нет разрешения на камеру.';
           });
         }
         return;
       }
 
-      _log.info('[Scanner] preparing models...');
       final models = await _prepareModels();
 
-      // Только пути — на мобильных (без байтов)
-      _log.info('[Scanner] WxScanner.create() with paths...');
+      // ВАЖНО: Пробуем p1080 вместо p720 (на Huawei часто помогает)
+      _log.info('[Scanner] WxScanner.create()...');
       final wxScanner = await WxScanner.create(
         detectModelPath: models.detectPath,
         srModelPath: models.srPath,
       );
       _wxScanner = wxScanner;
-      _log.info('[Scanner] WxScanner ready: '
-          'hasDetector=${wxScanner.hasDetector} '
-          'hasSuperResolution=${wxScanner.hasSuperResolution}');
 
-      _log.info('[Scanner] creating WxScanController...');
+      _log.info('[Scanner] WxScanController(p1080)...');
       final controller = WxScanController(
         scanner: wxScanner,
-        resolution: WxResolution.p720,
+        resolution: WxResolution.p1080, // <-- Поменяли разрешение
       );
 
-      _log.info('[Scanner] controller.initialize() with paths...');
+      _log.info('[Scanner] controller.initialize()...');
       await controller.initialize(
         detectModelPath: models.detectPath,
         srModelPath: models.srPath,
       );
-      _log.info('[Scanner] controller.initialize() done');
 
       final hasTorch = await controller.hasTorch();
 
@@ -131,150 +127,44 @@ class _ScannerSheetState extends State<_ScannerSheet>
       }
 
       controller.addListener(_onControllerChanged);
-      _sub = controller.scans.listen(
-        _onFrame,
-        onError: (Object e, StackTrace st) {
-          _log.error('[Scanner] stream error: $e');
-        },
-      );
-
-      final value = controller.value;
-      _log.info('[Scanner] value after init: '
-          'nativeReady=${value.nativeReady} '
-          'isInitialized=${value.isInitialized} '
-          'modelsLoaded=${value.modelsLoaded} '
-          'previewSize=${value.previewSize?.width}x'
-          '${value.previewSize?.height}');
+      _sub = controller.scans.listen(_onFrame, onError: (e, st) {
+        _log.error('[Scanner] stream error: $e');
+      });
 
       setState(() {
         _controller = controller;
         _hasTorch = hasTorch;
         _initializing = false;
-        _initError = value.nativeReady ? null : 'Нативный сканер не загрузился';
+        _initError = null;
       });
 
-      // ВАЖНО: setScanning(true) только ПОСЛЕ того, как WxScanPreview
-      // отрисовался. Иначе камера не привязывается к SurfaceTexture.
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted || _controller == null) return;
-        await Future.delayed(const Duration(milliseconds: 100));
+      // Стартуем сканирование после того, как виджет WxScanPreview отрисовался
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        try {
-          await _controller!.setScanning(true);
-          _log.info('[Scanner] post-frame setScanning(true) OK');
-        } catch (e) {
-          _log.warn('[Scanner] post-frame setScanning error: $e');
+        _controller?.setScanning(true);
+        _log.info('[Scanner] scanning started post-frame');
+      });
+
+      // Watchdog: если через 7 секунд кадров нет, показываем ошибку
+      _watchdogTimer = Timer(const Duration(seconds: 7), () {
+        if (!mounted) return;
+        if (_rawFrameCount == 0 || _nonEmptyFrames == 0) {
+          _log.error('[Scanner] watchdog: no valid frames in 7s');
+          setState(() {
+            _initError = 'Камера не передает кадры в анализатор (ошибка драйвера Huawei).\n'
+                'Используйте ручной ввод.';
+          });
         }
       });
 
-      // Через 2 сек — если кадров нет, принудительный toggle
-      _toggleTimer = Timer(const Duration(seconds: 2), () {
-        if (!mounted) return;
-        if (_rawFrameCount > 0) {
-          _log.info('[Scanner] toggle-check: frames are flowing, no action');
-          return;
-        }
-        _log.warn('[Scanner] toggle-check: NO frames in 2s, '
-            'forcing setScanning false -> true');
-        _forceToggleScanning();
-      });
-
-      // Через 5 сек — fallback через grabFrame
-      _fallbackTimer = Timer(const Duration(seconds: 5), () {
-        if (!mounted) return;
-        if (_rawFrameCount > 0) {
-          _log.info('[Scanner] fallback-check: frames flowing, cancelling');
-          return;
-        }
-        _log.warn('[Scanner] fallback-check: NO frames in 5s, '
-            'starting grabFrame polling');
-        _startGrabFrameFallback();
-      });
-
-      // Через 10 сек — если всё ещё ничего, показываем ошибку
-      _watchdogTimer = Timer(const Duration(seconds: 10), () {
-        if (!mounted) return;
-        if (_rawFrameCount > 0) {
-          _log.info('[Scanner] watchdog OK: '
-              '$_rawFrameCount frames, $_nonEmptyFrames non-empty');
-          return;
-        }
-        _log.error('[Scanner] watchdog FAIL: no frames at all after 10s');
-        setState(() {
-          _initError = 'Сканер не отдаёт кадры на этом устройстве.\n'
-              'Введите код вручную.';
-        });
-      });
     } catch (e, st) {
       _log.error('[Scanner] boot failed: $e');
-      _log.error('[Scanner] stack: '
-          '${st.toString().split('\n').take(4).join(' | ')}');
       if (!mounted) return;
       setState(() {
         _initializing = false;
         _initError = 'Ошибка инициализации: $e';
       });
     }
-  }
-
-  Future<void> _forceToggleScanning() async {
-    final c = _controller;
-    if (c == null) return;
-    try {
-      _log.info('[Scanner] toggle: setScanning(false)');
-      await c.setScanning(false);
-      await Future.delayed(const Duration(milliseconds: 300));
-      _log.info('[Scanner] toggle: setScanning(true)');
-      await c.setScanning(true);
-      await Future.delayed(const Duration(milliseconds: 500));
-      _log.info('[Scanner] toggle done, frames=$_rawFrameCount');
-    } catch (e) {
-      _log.error('[Scanner] toggle failed: $e');
-    }
-  }
-
-  void _startGrabFrameFallback() {
-    _fallbackTimer?.cancel();
-    _fallbackTimer = Timer.periodic(
-      const Duration(milliseconds: 900),
-      (_) async {
-        if (!mounted || _isProcessing) return;
-        if (_rawFrameCount > 0) {
-          _log.info('[Scanner] real frames arrived, '
-              'stopping grabFrame fallback');
-          _fallbackTimer?.cancel();
-          return;
-        }
-
-        final controller = _controller;
-        final scanner = _wxScanner;
-        if (controller == null || scanner == null) return;
-
-        try {
-          final jpeg = await controller.grabFrame();
-          if (jpeg == null || jpeg.isEmpty) {
-            _log.warn('[Scanner] grabFrame returned null/empty');
-            return;
-          }
-          final codec = await ui.instantiateImageCodec(jpeg);
-          final frame = await codec.getNextFrame();
-          final image = frame.image;
-          final ByteData? data =
-              await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-          final w = image.width;
-          final h = image.height;
-          image.dispose();
-          codec.dispose();
-
-          if (data == null) return;
-          final rgba = data.buffer.asUint8List();
-          final outcome = await scanner.scanPixels(rgba, w, h);
-          _onFrame(outcome);
-        } catch (e) {
-          _log.warn('[Scanner] grabFrame fallback error: $e');
-        }
-      },
-    );
   }
 
   Future<
@@ -289,14 +179,12 @@ class _ScannerSheetState extends State<_ScannerSheet>
       final asset = 'assets/models/$name';
       final file = File('${dir.path}/$name');
       final data = await rootBundle.load(asset);
-      final bytes = data.buffer
-          .asUint8List(data.offsetInBytes, data.lengthInBytes);
+      final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
       if (!await file.exists() || await file.length() != bytes.length) {
         await file.writeAsBytes(bytes, flush: true);
       }
       return (bytes, file.path);
     }
-
     final (db, dp) = await install('detect.tflite');
     final (sb, sp) = await install('sr.tflite');
     return (detectBytes: db, srBytes: sb, detectPath: dp, srPath: sp);
@@ -310,20 +198,26 @@ class _ScannerSheetState extends State<_ScannerSheet>
     if (!mounted) return;
     _rawFrameCount++;
 
-    if (_rawFrameCount <= 3) {
+    if (_rawFrameCount <= 5) {
       _log.info('[Scanner] frame #$_rawFrameCount RAW: '
           'size=${frame.width}x${frame.height} '
           'results=${frame.results.length} '
           'candidates=${frame.candidates.length}');
     }
 
-    if (frame.width == 0 || frame.height == 0) return;
+    // Если пришел пустой кадр (баг драйвера Huawei), пробуем перезапустить стрим
+    if (frame.width == 0 || frame.height == 0) {
+      if (_rawFrameCount == 3 && !_isRestarting) {
+        _isRestarting = true;
+        _log.warn('[Scanner] got 0x0 frame. Restarting camera stream...');
+        _restartCameraStream();
+      }
+      return;
+    }
 
     _nonEmptyFrames++;
-
     if (_nonEmptyFrames == 1) {
-      _log.info('[Scanner] FIRST NON-EMPTY: '
-          '${frame.width}x${frame.height}');
+      _log.info('[Scanner] FIRST NON-EMPTY FRAME: ${frame.width}x${frame.height}');
     }
 
     if (_isProcessing) return;
@@ -362,9 +256,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
           .firstOrNull;
     } else if (kind == ScanKind.item) {
       item = widget.db.inventoryItems
-          .where((i) =>
-              i.kind == InventoryItemKind.item &&
-              i.sku.toLowerCase() == searchCode.toLowerCase())
+          .where((i) => i.kind == InventoryItemKind.item && i.sku.toLowerCase() == searchCode.toLowerCase())
           .firstOrNull;
     } else {
       loc = widget.db.storageLocations
@@ -372,15 +264,10 @@ class _ScannerSheetState extends State<_ScannerSheet>
           .firstOrNull;
       if (loc == null) {
         item = widget.db.inventoryItems
-            .where((i) =>
-                i.kind == InventoryItemKind.item &&
-                i.sku.toLowerCase() == searchCode.toLowerCase())
+            .where((i) => i.kind == InventoryItemKind.item && i.sku.toLowerCase() == searchCode.toLowerCase())
             .firstOrNull;
       }
     }
-
-    _log.info('[Scanner] lookup: kind=$kind code=$searchCode '
-        'loc=${loc?.code} item=${item?.sku}');
 
     setState(() {
       _isProcessing = true;
@@ -389,6 +276,21 @@ class _ScannerSheetState extends State<_ScannerSheet>
       _foundLoc = loc;
     });
     _controller?.setScanning(false);
+  }
+
+  Future<void> _restartCameraStream() async {
+    final c = _controller;
+    if (c == null) return;
+    try {
+      await c.setScanning(false);
+      await Future.delayed(const Duration(milliseconds: 500));
+      await c.setScanning(true);
+      _log.info('[Scanner] camera stream restarted');
+    } catch (e) {
+      _log.error('[Scanner] restart failed: $e');
+    } finally {
+      _isRestarting = false;
+    }
   }
 
   void _resetScanner() {
@@ -432,13 +334,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Отмена')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
           FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: AppColors.amb,
-                foregroundColor: const Color(0xFF1C1204)),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.amb, foregroundColor: const Color(0xFF1C1204)),
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('OK'),
           ),
@@ -446,24 +344,15 @@ class _ScannerSheetState extends State<_ScannerSheet>
       ),
     );
     if (ok == null || ok.isEmpty || !mounted) return;
-    Navigator.pop(
-      context,
-      AppScanResult(
-        ok,
-        ok.startsWith('LOC:')
-            ? ScanKind.location
-            : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown),
-        ok.replaceAll(RegExp(r'^(LOC:|SKU:)'), ''),
-      ),
-    );
+    Navigator.pop(context, AppScanResult(
+      ok,
+      ok.startsWith('LOC:') ? ScanKind.location : (ok.startsWith('SKU:') ? ScanKind.item : ScanKind.unknown),
+      ok.replaceAll(RegExp(r'^(LOC:|SKU:)'), ''),
+    ));
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _log.info('[Scanner] lifecycle: $state '
-        '(controller=${_controller == null ? "null" : "ready"})');
-    // Игнорируем lifecycle, пока контроллер не создан — иначе
-    // можем остановить камеру до её старта (это и была проблема).
     if (_controller == null) return;
     if (state == AppLifecycleState.resumed) {
       _controller?.setScanning(!_isProcessing);
@@ -474,8 +363,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   @override
   void dispose() {
-    _toggleTimer?.cancel();
-    _fallbackTimer?.cancel();
     _watchdogTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
@@ -484,10 +371,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
     _wxScanner?.dispose();
     super.dispose();
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // UI
-  // ═══════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
@@ -506,26 +389,17 @@ class _ScannerSheetState extends State<_ScannerSheet>
             margin: const EdgeInsets.only(top: 8),
             width: 40,
             height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.line2,
-              borderRadius: BorderRadius.circular(2),
-            ),
+            decoration: BoxDecoration(color: AppColors.line2, borderRadius: BorderRadius.circular(2)),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(children: [
-              const Icon(Icons.qr_code_scanner,
-                  size: 20, color: AppColors.amb),
+              const Icon(Icons.qr_code_scanner, size: 20, color: AppColors.amb),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text('Сканирование',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
+                child: Text('Сканирование', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
-              ),
+              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
             ]),
           ),
           Expanded(
@@ -551,23 +425,14 @@ class _ScannerSheetState extends State<_ScannerSheet>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.videocam_off,
-                size: 48, color: AppColors.red),
+            const Icon(Icons.videocam_off, size: 48, color: AppColors.red),
             const SizedBox(height: 12),
-            const Text('Камера недоступна',
-                style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w700)),
+            const Text('Камера недоступна', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
-            Text(_initError!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.mut)),
+            Text(_initError!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: AppColors.mut)),
             const SizedBox(height: 16),
             FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.amb,
-                foregroundColor: const Color(0xFF1C1204),
-              ),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.amb, foregroundColor: const Color(0xFF1C1204)),
               onPressed: _manualInput,
               icon: const Icon(Icons.keyboard, size: 16),
               label: const Text('Ввести код вручную'),
@@ -589,10 +454,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
       builder: (context, value, _) {
         final previewSize = value.previewSize;
         if (previewSize == null) {
-          return const ColoredBox(
-            color: Color(0xFF0E1420),
-            child: Center(child: CircularProgressIndicator()),
-          );
+          return const ColoredBox(color: Color(0xFF0E1420), child: Center(child: CircularProgressIndicator()));
         }
 
         return Stack(
@@ -615,37 +477,22 @@ class _ScannerSheetState extends State<_ScannerSheet>
                 ),
               ),
             ),
-
-            if (_lastFrame != null &&
-                (_lastFrame!.results.isNotEmpty ||
-                    _lastFrame!.candidates.isNotEmpty))
+            if (_lastFrame != null && (_lastFrame!.results.isNotEmpty || _lastFrame!.candidates.isNotEmpty))
               IgnorePointer(
                 child: CustomPaint(
                   size: Size.infinite,
                   painter: _CodeMarkerPainter(frame: _lastFrame!),
                 ),
               ),
-
-            if (!_isProcessing &&
-                (_lastFrame == null || _lastFrame!.results.isEmpty))
+            if (!_isProcessing && (_lastFrame == null || _lastFrame!.results.isEmpty))
               Center(
                 child: Container(
-                  width: 250,
-                  height: 250,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: AppColors.amb, width: 3),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                  width: 250, height: 250,
+                  decoration: BoxDecoration(border: Border.all(color: AppColors.amb, width: 3), borderRadius: BorderRadius.circular(16)),
                 ),
               ),
-
             if (_isProcessing)
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 16,
-                child: _buildFloatingCard(),
-              ),
+              Positioned(left: 16, right: 16, bottom: 16, child: _buildFloatingCard()),
           ],
         );
       },
@@ -657,17 +504,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(children: [
         Text(
-          _isProcessing
-              ? 'Подтвердите выбор'
-              : (_initError != null
-                  ? 'Введите код вручную'
-                  : 'Наведите на QR полки или позиции'),
-          style: TextStyle(
-            fontSize: 12,
-            color: _isProcessing ? AppColors.amb : AppColors.mut,
-            fontWeight:
-                _isProcessing ? FontWeight.bold : FontWeight.normal,
-          ),
+          _isProcessing ? 'Подтвердите выбор' : (_initError != null ? 'Введите код вручную' : 'Наведите на QR полки или позиции'),
+          style: TextStyle(fontSize: 12, color: _isProcessing ? AppColors.amb : AppColors.mut, fontWeight: _isProcessing ? FontWeight.bold : FontWeight.normal),
         ),
         const SizedBox(height: 10),
         Row(children: [
@@ -679,16 +517,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
                   valueListenable: _controller!,
                   builder: (context, value, _) {
                     return OutlinedButton.icon(
-                      onPressed: () =>
-                          _controller!.setTorch(!value.torchEnabled),
-                      icon: Icon(
-                        value.torchEnabled
-                            ? Icons.flashlight_on
-                            : Icons.flashlight_off,
-                        size: 16,
-                      ),
-                      label: Text(
-                          value.torchEnabled ? 'Свет вкл' : 'Свет'),
+                      onPressed: () => _controller!.setTorch(!value.torchEnabled),
+                      icon: Icon(value.torchEnabled ? Icons.flashlight_on : Icons.flashlight_off, size: 16),
+                      label: Text(value.torchEnabled ? 'Свет вкл' : 'Свет'),
                     );
                   },
                 ),
@@ -698,13 +529,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
           Expanded(
             child: OutlinedButton.icon(
               onPressed: _isProcessing ? _resetScanner : _manualInput,
-              icon: Icon(
-                _isProcessing ? Icons.refresh : Icons.keyboard,
-                size: 16,
-              ),
-              label: Text(
-                _isProcessing ? 'Сканировать другое' : 'Ввести вручную',
-              ),
+              icon: Icon(_isProcessing ? Icons.refresh : Icons.keyboard, size: 16),
+              label: Text(_isProcessing ? 'Сканировать другое' : 'Ввести вручную'),
             ),
           ),
         ]),
@@ -714,63 +540,34 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   Widget _buildFloatingCard() {
     final isFound = _foundItem != null || _foundLoc != null;
-    final title =
-        _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
-
+    final title = _foundItem?.name ?? _foundLoc?.name ?? 'Не найдено в базе';
     final subtitle = _foundItem != null
-        ? '${_foundItem!.sku} · Остаток: '
-            '${widget.db.stockTotal(_foundItem!.id)} '
-            '${_foundItem!.unit.label}'
-        : (_foundLoc != null
-            ? 'Локация: ${_foundLoc!.code}'
-            : (_rawCodeString ?? 'Неизвестный код'));
+        ? '${_foundItem!.sku} · Остаток: ${widget.db.stockTotal(_foundItem!.id)} ${_foundItem!.unit.label}'
+        : (_foundLoc != null ? 'Локация: ${_foundLoc!.code}' : (_rawCodeString ?? 'Неизвестный код'));
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.panel,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isFound
-              ? AppColors.grn.withValues(alpha: 0.5)
-              : AppColors.red.withValues(alpha: 0.5),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
-        ],
+        border: Border.all(color: isFound ? AppColors.grn.withValues(alpha: 0.5) : AppColors.red.withValues(alpha: 0.5)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(children: [
             Icon(
-              isFound
-                  ? (_foundLoc != null
-                      ? Icons.inventory_2_outlined
-                      : Icons.check_circle_outline)
-                  : Icons.error_outline,
-              color: isFound ? AppColors.grn : AppColors.red,
-              size: 24,
+              isFound ? (_foundLoc != null ? Icons.inventory_2_outlined : Icons.check_circle_outline) : Icons.error_outline,
+              color: isFound ? AppColors.grn : AppColors.red, size: 24,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w700),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  Text(subtitle,
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.dim),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+                  Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.dim), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
@@ -780,14 +577,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.amb,
-                  foregroundColor: const Color(0xFF1C1204),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                ),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.amb, foregroundColor: const Color(0xFF1C1204), padding: const EdgeInsets.symmetric(vertical: 10)),
                 onPressed: _confirmSelection,
-                child: const Text('Выбрать',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text('Выбрать', style: TextStyle(fontWeight: FontWeight.w700)),
               ),
             ),
           ],
@@ -806,27 +598,14 @@ class _CodeMarkerPainter extends CustomPainter {
     if (frame.width == 0 || frame.height == 0) return;
     if (frame.results.isEmpty && frame.candidates.isEmpty) return;
 
-    final scale =
-        math.max(size.width / frame.width, size.height / frame.height);
+    final scale = math.max(size.width / frame.width, size.height / frame.height);
     final dx = (size.width - frame.width * scale) / 2;
     final dy = (size.height - frame.height * scale) / 2;
 
-    final fillPaint = Paint()
-      ..color = AppColors.grn.withValues(alpha: 0.2)
-      ..style = PaintingStyle.fill;
-    final glowPaint = Paint()
-      ..color = AppColors.grn.withValues(alpha: 0.4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 8.0
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-    final borderPaint = Paint()
-      ..color = AppColors.grn
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-    final candidatePaint = Paint()
-      ..color = AppColors.amb.withValues(alpha: 0.7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+    final fillPaint = Paint()..color = AppColors.grn.withValues(alpha: 0.2)..style = PaintingStyle.fill;
+    final glowPaint = Paint()..color = AppColors.grn.withValues(alpha: 0.4)..style = PaintingStyle.stroke..strokeWidth = 8.0..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    final borderPaint = Paint()..color = AppColors.grn..style = PaintingStyle.stroke..strokeWidth = 3;
+    final candidatePaint = Paint()..color = AppColors.amb.withValues(alpha: 0.7)..style = PaintingStyle.stroke..strokeWidth = 2;
 
     for (final r in frame.results) {
       if (r.corners.length < 4) continue;
@@ -846,11 +625,7 @@ class _CodeMarkerPainter extends CustomPainter {
       final path = Path();
       for (var i = 0; i < c.length; i++) {
         final p = Offset(c[i].dx * scale + dx, c[i].dy * scale + dy);
-        if (i == 0) {
-          path.moveTo(p.dx, p.dy);
-        } else {
-          path.lineTo(p.dx, p.dy);
-        }
+        if (i == 0) path.moveTo(p.dx, p.dy); else path.lineTo(p.dx, p.dy);
       }
       path.close();
       canvas.drawPath(path, candidatePaint);
@@ -860,26 +635,19 @@ class _CodeMarkerPainter extends CustomPainter {
   Path _buildPath(ScanResult r, double scale, double dx, double dy) {
     final path = Path();
     for (var i = 0; i < r.corners.length; i++) {
-      final p = Offset(
-          r.corners[i].dx * scale + dx, r.corners[i].dy * scale + dy);
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
+      final p = Offset(r.corners[i].dx * scale + dx, r.corners[i].dy * scale + dy);
+      if (i == 0) path.moveTo(p.dx, p.dy); else path.lineTo(p.dx, p.dy);
     }
     path.close();
     return path;
   }
 
-  void _drawCorner(
-      Canvas canvas, Offset p, double dx, double dy, Paint paint) {
+  void _drawCorner(Canvas canvas, Offset p, double dx, double dy, Paint paint) {
     const len = 15.0;
     canvas.drawLine(p, p + Offset(len * dx, 0), paint);
     canvas.drawLine(p, p + Offset(0, len * dy), paint);
   }
 
   @override
-  bool shouldRepaint(covariant _CodeMarkerPainter oldDelegate) =>
-      oldDelegate.frame != frame;
+  bool shouldRepaint(covariant _CodeMarkerPainter oldDelegate) => oldDelegate.frame != frame;
 }
