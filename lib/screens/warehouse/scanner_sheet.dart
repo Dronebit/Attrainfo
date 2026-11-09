@@ -11,7 +11,7 @@ import '../../models/inventory.dart';
 import '../../theme.dart';
 
 // ═══════════════════════════════════════════════════════════════════
-// Публичный API (совместим с предыдущим)
+// Публичный API
 // ═══════════════════════════════════════════════════════════════════
 
 class AppScanResult {
@@ -51,20 +51,20 @@ class _ScannerSheetState extends State<_ScannerSheet>
     with WidgetsBindingObserver {
   late final wx.WxScanController _controller;
 
-  // Состояние «зафиксировали код»
+  // Состояние фиксации
   bool _isProcessing = false;
   String? _rawCodeString;
   InventoryItem? _foundItem;
   StorageLocation? _foundLoc;
 
-  // Активные рамки AR
+  // Живые рамки
   List<wx.ScanResult> _liveResults = [];
 
-  // Загрузка моделей
+  // Инициализация
   bool _initializing = true;
   String? _initError;
+  bool _hasTorch = false; // проверяется один раз через controller.hasTorch()
 
-  // Чтобы не плодить вызовы setState на каждом кадре
   DateTime _lastHaptic = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -97,11 +97,12 @@ class _ScannerSheetState extends State<_ScannerSheet>
         srModel: srModel,
       );
 
+      // Проверяем поддержку фонарика один раз
+      _hasTorch = await _controller.hasTorch();
+
       _controller.scans.listen(_onScanFrame);
 
-      if (mounted) {
-        setState(() => _initializing = false);
-      }
+      if (mounted) setState(() => _initializing = false);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -122,27 +123,23 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
     final results = outcome.results;
 
-    // Обновляем «живые» рамки только если ещё не зафиксировали объект
     if (!_isProcessing) {
-      // ищем первый валидный код
       wx.ScanResult? valid;
       for (final r in results) {
-        final txt = r.text;
-        if (txt != null && txt.isNotEmpty) {
+        if (r.text.isNotEmpty) {
           valid = r;
           break;
         }
       }
 
-      if (valid != null && valid.text != null) {
-        // вибро-отклик не чаще раза в секунду
+      if (valid != null) {
         final now = DateTime.now();
         if (now.difference(_lastHaptic).inMilliseconds > 800) {
           _lastHaptic = now;
           HapticFeedback.mediumImpact();
         }
 
-        final raw = valid.text!;
+        final raw = valid.text;
         String searchCode = raw;
         ScanKind kind = ScanKind.unknown;
 
@@ -193,10 +190,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
       }
     }
 
-    // Пока не зафиксировали — обновляем рамки каждый кадр
-    setState(() {
-      _liveResults = results;
-    });
+    setState(() => _liveResults = results);
   }
 
   void _resetScanner() {
@@ -271,7 +265,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Экономим батарею: останавливаем сканирование в фоне
     _controller.setScanning(state == AppLifecycleState.resumed);
   }
 
@@ -295,7 +288,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(children: [
-          // ручка
           Container(
             margin: const EdgeInsets.only(top: 8),
             width: 40,
@@ -305,7 +297,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          // заголовок
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(children: [
@@ -323,8 +314,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
               ),
             ]),
           ),
-
-          // Камера
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -334,15 +323,13 @@ class _ScannerSheetState extends State<_ScannerSheet>
               ),
             ),
           ),
-
-          // Нижняя панель
           _buildBottomPanel(),
         ]),
       ),
     );
   }
 
-  // ─── Зона камеры ───
+  // ─── Камера ───
 
   Widget _buildCameraArea() {
     if (_initError != null) {
@@ -399,7 +386,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
           return Stack(
             fit: StackFit.expand,
             children: [
-              // 1. Превью с корректным поворотом
+              // Превью
               ClipRect(
                 child: FittedBox(
                   fit: BoxFit.cover,
@@ -418,7 +405,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
                 ),
               ),
 
-              // 2. Прицел, если объект ещё не найден
+              // Прицел
               if (!_isProcessing)
                 Center(
                   child: Container(
@@ -432,7 +419,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
                   ),
                 ),
 
-              // 3. AR-рамки по найденным кодам
+              // AR-рамки
               if (_liveResults.isNotEmpty)
                 IgnorePointer(
                   child: CustomPaint(
@@ -443,7 +430,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
                   ),
                 ),
 
-              // 4. Всплывающая карточка
+              // Карточка
               if (_isProcessing)
                 Positioned(
                   left: 16,
@@ -478,16 +465,14 @@ class _ScannerSheetState extends State<_ScannerSheet>
         ),
         const SizedBox(height: 10),
         Row(children: [
-          // Фонарик (только если камера доступна)
-          if (_initError == null && !_initializing) ...[
-            ValueListenableBuilder<wx.WxScanValue>(
-              valueListenable: _controller,
-              builder: (context, value, _) {
-                if (!value.hasTorch) return const SizedBox.shrink();
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: OutlinedButton.icon(
+          if (_initError == null && !_initializing && _hasTorch) ...[
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ValueListenableBuilder<wx.WxScanValue>(
+                  valueListenable: _controller,
+                  builder: (context, value, _) {
+                    return OutlinedButton.icon(
                       onPressed: () =>
                           _controller.setTorch(!value.torchEnabled),
                       icon: Icon(
@@ -498,10 +483,10 @@ class _ScannerSheetState extends State<_ScannerSheet>
                       ),
                       label: Text(
                           value.torchEnabled ? 'Свет вкл' : 'Свет'),
-                    ),
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ),
             ),
           ],
           Expanded(
@@ -523,7 +508,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
     );
   }
 
-  // ─── Всплывающая карточка ───
+  // ─── Карточка ───
 
   Widget _buildFloatingCard() {
     final isFound = _foundItem != null || _foundLoc != null;
@@ -615,7 +600,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// AR-оверлей
+// AR-оверлей (по corners)
 // ═══════════════════════════════════════════════════════════════════
 
 class _TrackingPainter extends CustomPainter {
@@ -626,7 +611,6 @@ class _TrackingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Коэффициенты масштаба для BoxFit.cover
     final scale = math.max(
       size.width / previewSize.rotatedWidth,
       size.height / previewSize.rotatedHeight,
@@ -650,21 +634,29 @@ class _TrackingPainter extends CustomPainter {
       ..strokeWidth = 3.0;
 
     for (final result in results) {
-      final frameRect = result.boundingBox;
-      if (frameRect == null) continue;
+      if (result.corners.length < 4) continue;
+
+      // Строим ограничивающий прямоугольник по четырём углам
+      double minX = double.infinity, minY = double.infinity;
+      double maxX = -double.infinity, maxY = -double.infinity;
+      for (final p in result.corners) {
+        if (p.x < minX) minX = p.x.toDouble();
+        if (p.y < minY) minY = p.y.toDouble();
+        if (p.x > maxX) maxX = p.x.toDouble();
+        if (p.y > maxY) maxY = p.y.toDouble();
+      }
 
       final screenRect = Rect.fromLTWH(
-        dx + frameRect.left * scale,
-        dy + frameRect.top * scale,
-        frameRect.width * scale,
-        frameRect.height * scale,
+        dx + minX * scale,
+        dy + minY * scale,
+        (maxX - minX) * scale,
+        (maxY - minY) * scale,
       );
 
       canvas.drawRect(screenRect, fillPaint);
       canvas.drawRect(screenRect, glowPaint);
       canvas.drawRect(screenRect, borderPaint);
 
-      // Уголки для AR-эффекта
       _drawCorner(canvas, screenRect.topLeft, 1, 1, borderPaint);
       _drawCorner(canvas, screenRect.topRight, -1, 1, borderPaint);
       _drawCorner(canvas, screenRect.bottomLeft, 1, -1, borderPaint);
