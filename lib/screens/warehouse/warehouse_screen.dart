@@ -6,6 +6,7 @@ import '../../models/inventory.dart';
 import '../../models/models.dart'; 
 import '../../theme.dart';
 import 'scanner_sheet.dart';
+import 'dialogs/qr_dialog.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 // КОРНЕВОЙ ЭКРАН — 4 вкладки (Главная / Позиции / Локации / Операции)
