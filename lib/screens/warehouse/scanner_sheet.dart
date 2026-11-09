@@ -99,10 +99,9 @@ class _ScannerSheetState extends State<_ScannerSheet>
       _log.info('[Scanner] preparing models...');
       final models = await _prepareModels();
 
-      _log.info('[Scanner] WxScanner.create()...');
+      // Только пути — на мобильных (без байтов)
+      _log.info('[Scanner] WxScanner.create() with paths...');
       final wxScanner = await WxScanner.create(
-        detectModel: models.detectBytes,
-        srModel: models.srBytes,
         detectModelPath: models.detectPath,
         srModelPath: models.srPath,
       );
@@ -117,10 +116,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
         resolution: WxResolution.p720,
       );
 
-      _log.info('[Scanner] controller.initialize()...');
+      _log.info('[Scanner] controller.initialize() with paths...');
       await controller.initialize(
-        detectModel: models.detectBytes,
-        srModel: models.srBytes,
         detectModelPath: models.detectPath,
         srModelPath: models.srPath,
       );
@@ -156,7 +153,21 @@ class _ScannerSheetState extends State<_ScannerSheet>
         _initError = value.nativeReady ? null : 'Нативный сканер не загрузился';
       });
 
-      // Через 2 сек — если кадров нет, принудительно toggle
+      // ВАЖНО: setScanning(true) только ПОСЛЕ того, как WxScanPreview
+      // отрисовался. Иначе камера не привязывается к SurfaceTexture.
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted || _controller == null) return;
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (!mounted) return;
+        try {
+          await _controller!.setScanning(true);
+          _log.info('[Scanner] post-frame setScanning(true) OK');
+        } catch (e) {
+          _log.warn('[Scanner] post-frame setScanning error: $e');
+        }
+      });
+
+      // Через 2 сек — если кадров нет, принудительный toggle
       _toggleTimer = Timer(const Duration(seconds: 2), () {
         if (!mounted) return;
         if (_rawFrameCount > 0) {
@@ -168,7 +179,7 @@ class _ScannerSheetState extends State<_ScannerSheet>
         _forceToggleScanning();
       });
 
-      // Через 5 сек — если кадров нет, fallback через grabFrame
+      // Через 5 сек — fallback через grabFrame
       _fallbackTimer = Timer(const Duration(seconds: 5), () {
         if (!mounted) return;
         if (_rawFrameCount > 0) {
@@ -222,8 +233,6 @@ class _ScannerSheetState extends State<_ScannerSheet>
     }
   }
 
-  /// Fallback: если стрим молчит, берём кадр через grabFrame()
-  /// и прогоняем через scanPixels(). Медленно, но работает.
   void _startGrabFrameFallback() {
     _fallbackTimer?.cancel();
     _fallbackTimer = Timer.periodic(
@@ -250,9 +259,8 @@ class _ScannerSheetState extends State<_ScannerSheet>
           final codec = await ui.instantiateImageCodec(jpeg);
           final frame = await codec.getNextFrame();
           final image = frame.image;
-          final ByteData? data = await image.toByteData(
-            format: ui.ImageByteFormat.rawRgba,
-          );
+          final ByteData? data =
+              await image.toByteData(format: ui.ImageByteFormat.rawRgba);
           final w = image.width;
           final h = image.height;
           image.dispose();
@@ -452,7 +460,11 @@ class _ScannerSheetState extends State<_ScannerSheet>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _log.info('[Scanner] lifecycle: $state');
+    _log.info('[Scanner] lifecycle: $state '
+        '(controller=${_controller == null ? "null" : "ready"})');
+    // Игнорируем lifecycle, пока контроллер не создан — иначе
+    // можем остановить камеру до её старта (это и была проблема).
+    if (_controller == null) return;
     if (state == AppLifecycleState.resumed) {
       _controller?.setScanning(!_isProcessing);
     } else {
