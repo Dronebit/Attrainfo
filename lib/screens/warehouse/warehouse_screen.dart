@@ -846,7 +846,7 @@ class _HomeTabState extends State<_HomeTab> {
               const SizedBox(height: 10),
               _transferChoiceButton(
                 icon: Icons.inventory_2_outlined,
-                title: 'РУЧНОЙ ВЫБОР',
+                title: 'Ручной выбор',
                 subtitle: 'выбрать номенклатуру из списка',
                 onTap: () => Navigator.pop(ctx, 'manual'),
               ),
