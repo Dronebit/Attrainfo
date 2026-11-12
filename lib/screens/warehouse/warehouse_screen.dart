@@ -337,7 +337,7 @@ class _HomeTabState extends State<_HomeTab> {
     );
   }
 
-  Future<void> _onScan(AppDatabase db) async {
+  Future<void> _onScan(AppDatabase db, {bool forTransfer = false}) async {
   final result = await showScannerSheet(context, db);
   if (result == null || !mounted) return;
 
@@ -377,7 +377,17 @@ class _HomeTabState extends State<_HomeTab> {
     return;
   }
   if (item != null) {
-    _showItemCard(db, item);
+    if (forTransfer) {
+      _openTransactionDialog(
+        context,
+        db,
+        item,
+        StockTransactionType.transfer,
+        authorId: widget.currentUser?.id,
+      );
+    } else {
+      _showItemCard(db, item);
+    }
     return;
   }
   _snack('Код «${result.code}» не найден');
@@ -757,8 +767,7 @@ class _HomeTabState extends State<_HomeTab> {
               icon: Icons.swap_horiz,
               label: 'Переместить',
               color: AppColors.cyn,
-              onTap: () => _pickItemThenTransaction(
-                  db, StockTransactionType.transfer),
+              onTap: () => _showTransferChoice(db),
             ),
           ),
         ]),
@@ -793,6 +802,114 @@ class _HomeTabState extends State<_HomeTab> {
                     color: color)),
           ),
         ]),
+      ),
+    );
+  }
+
+  Future<void> _showTransferChoice(AppDatabase db) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          decoration: const BoxDecoration(
+            color: AppColors.panel,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.line2,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text('Перемещение',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              _transferChoiceButton(
+                icon: Icons.qr_code_scanner,
+                title: 'СКАНИРОВАТЬ QR',
+                subtitle: 'ячейка · верстак · деталь',
+                gradient: true,
+                onTap: () => Navigator.pop(ctx, 'scan'),
+              ),
+              const SizedBox(height: 10),
+              _transferChoiceButton(
+                icon: Icons.inventory_2_outlined,
+                title: 'РУЧНОЙ ВЫБОР',
+                subtitle: 'выбрать номенклатуру из списка',
+                onTap: () => Navigator.pop(ctx, 'manual'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'scan') {
+      _onScan(db, forTransfer: true);
+    } else {
+      _pickItemThenTransaction(db, StockTransactionType.transfer);
+    }
+  }
+
+  Widget _transferChoiceButton({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool gradient = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        height: 132,
+        padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+        decoration: BoxDecoration(
+          gradient: gradient
+              ? const LinearGradient(
+                  colors: [AppColors.amb, Color(0xFFFF9A3D)])
+              : null,
+          color: gradient ? null : AppColors.cyn.withValues(alpha: 0.08),
+          border: gradient
+              ? null
+              : Border.all(color: AppColors.cyn.withValues(alpha: 0.35)),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 38,
+                color: gradient ? const Color(0xFF1C1204) : AppColors.cyn),
+            const SizedBox(height: 8),
+            Text(title,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
+                  color: gradient ? const Color(0xFF1C1204) : AppColors.cyn,
+                )),
+            const SizedBox(height: 3),
+            Text(subtitle,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: gradient
+                        ? const Color(0xCC1C1204)
+                        : AppColors.mut)),
+          ],
+        ),
       ),
     );
   }
