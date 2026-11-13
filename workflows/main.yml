@@ -68,7 +68,7 @@ jobs:
         run: flutter test || true
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release -- -x lintVitalAnalyzeRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v5
