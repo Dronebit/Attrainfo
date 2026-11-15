@@ -18,7 +18,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -58,7 +58,7 @@ jobs:
         run: flutter test || true
         
       - name: Build release APK
-        run: flutter build apk --release -- -x lintVitalAnalyzeRelease
+        run: flutter build apk --release 
 
 
       - name: Upload APK
